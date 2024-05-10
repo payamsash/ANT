@@ -1,0 +1,269 @@
+# Default parameters for neurofeedback
+
+LSL:
+  Recorder:
+    # Default parameters for Stream object representing a single LSL stream
+    record_dir: null 
+    fname: 10 # where to save I guess
+    stream_name: null 
+    fif_subdir: True 
+  
+  Connection:
+    # Default parameters for connecting to the LSL stream and initiate data collection in the buffer.
+    force: False 
+    timeout: 2
+
+  Baseline_acquisition:
+    # Default parameters for baseline data acquisition from LSL streams. 
+    bufsize: 4
+    winsize: 3
+
+  Acquisition:
+    # Default parameters for data acquisition from LSL streams. 
+    bufsize: 3
+    winsize: 1
+
+  Mock_connection:
+    # Default parameters for playing a recorded file on LSL network in another process. 
+    stream_name: "StreamPlayer"
+    fif_file: "/Users/payamsadeghishabestari/fooof_project/fooof_rtx/EEG_sim/freq_ranges/sim_rs_theta_5-raw.fif"
+    repeat: .inf
+    trigger_def: null
+    chunk_size: 16
+    high_resolution: False
+
+  montage:
+
+    montage: "standard_1020"
+    match_case: True
+    match_alias: False
+    on_missing: "warn"
+
+NF_modality:
+  individual_peak_tracking:
+    psd:
+      method: "welch"
+      fmin: 0
+      fmax: 80
+      tmin: null
+      tmax: null
+      remove_dc: True
+      n_jobs: 1
+
+    psd_fitting:
+      peak_width_limits: [0.5, 12.0]
+      max_n_peaks: .inf
+      min_peak_height: 0.0
+      peak_threshold: 2.0
+      aperiodic_mode: "fixed"
+
+    fft:
+      freq_res: 1
+
+    curve_fit:
+      p0: [1, 10, 1]
+      sigma: null
+      absolute_sigma: False
+      check_finite: null
+      bounds: [-.inf, .inf]
+      method: null
+      jac: null
+
+  sensor_power: 
+    fft:
+      freq_res: 1
+
+  individual_peak_power:
+    
+    psd:
+      method: "welch"
+      fmin: 0
+      fmax: 80
+      tmin: null
+      tmax: null
+      remove_dc: True
+      n_jobs: 1
+    
+    psd_fitting:
+      peak_width_limits: [0.5, 12.0]
+      max_n_peaks: .inf
+      min_peak_height: 0.0
+      peak_threshold: 2.0
+      aperiodic_mode: "fixed"
+    
+    fft:
+      freq_res: 1
+      freq_var: 1
+
+  entropy:
+
+    entropy_method: "AppEn"
+    emb_app: 2
+    metric_app: "chebyshev"
+    emb_sample: 2
+    metric_sample: "chebyshev"
+    psd_method: "welch"
+    tau: 2
+    emb_svd: 10
+
+  source_power:
+
+    src:
+      bl: "transversetemporal-rh"
+      subject: "fsaverage"
+      atlas: "aparc"
+      snr: 1
+      source: "fsaverage"
+      trans: "fsaverage"
+      bem: "fsaverage"
+      mindist: 0
+      n_jobs: null
+      noise_cov_method: "empirical"
+      loose: "auto"
+      depth: 0.8
+      fixed: "auto"
+      use_cps: True
+
+    inv_modeling:
+      method: "dSPM"
+      pick_ori: null
+      nave: 1
+      time_func: null
+      pick_ori: null
+      buffer_size: null
+      prepared: False
+      use_cps: True
+
+    fft:
+      winsize: 1 # maybe I should fix this
+      freq_res: 1
+      
+
+  sensor_connectivity:
+
+    channels:
+      ch_names: [["C3", "C4"], ["F3", "F4"]] # fix this
+      freq_res: 6
+    
+    con:
+      method: "coh"
+      sm_times: 0
+      sm_freqs: 1
+      sm_kernel: "hanning"
+      padding: 0
+      mode: "cwt_morlet"
+      mt_bandwidth: null
+      n_cycles: 5
+      gc_n_lags: 40
+      rank: null
+      decim: 1
+      n_jobs: 1
+  
+  source_connectivity:
+    fft:
+      freq_res: 6
+
+    src:
+      bl_1: "transversetemporal-rh"
+      bl_2: "transversetemporal-lh"
+      subject: "fsaverage"
+      atlas: "aparc"
+      snr: 1
+      source: "fsaverage"
+      trans: "fsaverage"
+      bem: "fsaverage"
+      mindist: 0
+      n_jobs: null
+      noise_cov_method: "empirical"
+      loose: "auto"
+      depth: 0.8
+      fixed: "auto"
+      use_cps: True
+
+    inv_modeling:
+      method: "dSPM"
+      pick_ori: null
+      nave: 1
+      time_func: null
+      pick_ori: null
+      buffer_size: null
+      prepared: False
+      use_cps: True
+
+    con:
+
+      method: "coh"
+      sm_times: 0
+      sm_freqs: 1
+      sm_kernel: "hanning"
+      padding: 0
+      mode: "cwt_morlet"
+      mt_bandwidth: null
+      n_cycles: 5
+      gc_n_lags: 40
+      rank: null
+      decim: 1
+      n_jobs: 1
+
+  sensor_graph:
+
+    channels:
+
+      ch_names: [["C3", "C4"], ["F3", "F4"]] # fix this
+      order: 5
+    
+    graph:
+
+      dist_type: "sqeuclidean"
+      alpha: 1
+      beta: 1
+      step: 0.5
+      w0: null
+      maxit: 10000
+      rtol: 1.0e-16
+
+  source_graph:
+
+    src:
+      order: 5
+      bl_1: "transversetemporal-rh"
+      bl_2: "transversetemporal-lh"
+      order: 5
+      subject: "fsaverage"
+      atlas: "aparc"
+      snr: 1
+      source: "fsaverage"
+      trans: "fsaverage"
+      bem: "fsaverage"
+      mindist: 0
+      n_jobs: null
+      noise_cov_method: "empirical"
+      loose: "auto"
+      depth: 0.8
+      fixed: "auto"
+      use_cps: True
+
+    inv_modeling:
+      method: "dSPM"
+      pick_ori: null
+      nave: 1
+      time_func: null
+      pick_ori: null
+      buffer_size: null
+      prepared: False
+      use_cps: True
+
+    label_extraction:
+      mode: "mean"
+      allow_empty: True
+      return_generator: False
+
+    graph:
+
+      dist_type: "sqeuclidean"
+      alpha: 1
+      beta: 1
+      step: 0.5
+      w0: null
+      maxit: 10000
+      rtol: 1.0e-10
