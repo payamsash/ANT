@@ -1,2 +1,2 @@
-# NF_realtime
+# ANT
 Pipeline for advanced neurofeedback
