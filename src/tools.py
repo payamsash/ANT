@@ -1,44 +1,75 @@
 import os.path as op
-import numpy as np
+from copy import deepcopy
 from warnings import warn
-from scipy.signal import butter, sosfiltfilt
-from fooof import FOOOF
 import time
+
+import numpy as np
+from scipy.signal import butter
 from scipy import sparse
-from mne.io import RawArray
 from scipy.spatial.distance import pdist, squareform
+import matplotlib.pyplot as plt
+
+from fooof import FOOOF
 from pyunlocbox import functions, solvers
-from mne import create_info, make_forward_solution, compute_raw_covariance
 from mne.minimum_norm import make_inverse_operator
 from mne.datasets import fetch_fsaverage
+from mne.viz import create_3d_figure, get_brain_class
+from mne import (make_forward_solution, compute_raw_covariance,
+                read_source_spaces, read_labels_from_annot)
                                 
 
+def canonical_frange_str_to_list(frange_name):
+        
+        freq_bands = {
+                "delta": [0.5, 4],
+                "theta": [4, 8],
+                "alpha": [8, 13],
+                "lower_alpha": [8, 10],
+                "upper_alpha": [10, 13],
+                "smr": [12, 15],
+                "beta": [15, 30],
+                "lower_beta": [15, 20],
+                "upper_beta": [20, 30],
+                "gamma": [30, 80],
+                "lower_gamma": [30, 50],
+                "upper_gamma" : [50, 80],
+                }
+        
+        if frange_name in list(freq_bands.keys()):
+                return freq_bands[frange_name]
+        else:
+                raise ValueError(f"frequency range {frange_name} is not defined.")
 
 
 def update_params(new_params, old_params, module):
-
+        
         if new_params is None:
                 new_params = old_params[module]
         else:
-                for mod in list(new_params.keys()):
-                        old_params[module][mod].update(new_params[mod]) 
-                new_params = old_params[module]
+                old_params_copy = deepcopy(old_params)
+                assert isinstance(new_params, dict), "Input params should be a dictionary."
+                assert module in ["LSL", "NF_modality"], "module should be either LSL or NF_modality."
+
+                if module == "LSL":
+                        for mod in list(new_params.keys()):
+                                old_params_copy[module][mod].update(new_params[mod]) 
+                if module == "NF_modality":
+                        for mod1 in list(new_params.keys()):
+                                for mod2 in list(new_params[mod1].keys()):
+                                        old_params_copy[module][mod1][mod2].update(new_params[mod1][mod2]) 
+
+                new_params = old_params_copy[module]
+
         return new_params
 
 
-def receive_data(receiver, pick_idxs, return_raw=False):
-
-        start_acq_time = time.time()
-        receiver.acquire()
-        if return_raw:
-                data = receiver.get_window(return_raw=True)[0].pick(pick_idxs).set_eeg_reference(projection=True)
-        else:
-                data = receiver.get_window(return_raw=False)[0][:,pick_idxs]
-                data -= np.mean(data, axis=0, keepdims=True)
-        acq_delay = time.time() - start_acq_time
-        
-        return data, acq_delay
-
+def timed(function):
+        def wrapper(*args, **kwargs):
+                tic = time.time()
+                value = function(*args, **kwargs)
+                toc = time.time()
+                return value, (toc - tic)
+        return wrapper
 
 
 def compute_fft(sfreq, winsize, freq_range, freq_res):
@@ -50,7 +81,6 @@ def compute_fft(sfreq, winsize, freq_range, freq_res):
         fft_window = np.hanning(winsize_in_samples)
 
         return fft_window, freq_band, freq_band_idxs, frequencies
-
 
 
 def estimate_aperiodic_component(raw_baseline, picks, psd_params, fitting_params, verbose=None):
@@ -87,7 +117,8 @@ def create_inverse_operator(raw_baseline, sl_params, return_src=False, verbose=N
                                                 verbose=verbose)
 
         if return_src:
-                return inverse_operator, src
+                src_obj = read_source_spaces(src, verbose=verbose)
+                return inverse_operator, src_obj
         else:
                 return inverse_operator
 
@@ -98,13 +129,6 @@ def butter_bandpass(l_freq, h_freq, sfreq, order):
         (low, high) = (l_freq / nyq, h_freq / nyq) 
         sos = butter(order, [low, high], analog=False, btype='band', output='sos')
         return sos
-
-
-def bandpass_filter(data, l_freq, h_freq, sfreq, order):
-
-        sos = butter_bandpass(l_freq, h_freq, sfreq, order=order)
-        filtered_data = sosfiltfilt(sos, data)
-        return filtered_data
 
 
 def weight2degmap(n_nodes):
@@ -157,8 +181,41 @@ def log_degree_barrier(smooth_signals, dist_type, alpha, beta, step, w0, maxit, 
         stepsize = step / (1 + lipg + norm_k)
         solver = solvers.mlfbf(L=k, Lt=kt, step=stepsize)
         problem = solvers.solve([f1, f2, f3], x0=w0, solver=solver, maxit=maxit,
-                                rtol=rtol, verbosity=None)
+                                rtol=rtol, verbosity="NONE")
         graph_matrix = squareform(problem['sol'])
 
         return graph_matrix
 
+
+def plot_glass_brain(bl1, bl2=None):
+
+        brain_kwargs = dict(alpha=0.15, background="white", cortex="low_contrast", size=(800, 600))
+        brain_labels = read_labels_from_annot(subject='fsaverage', parc='aparc')
+        bl_names = [bl.name for bl in brain_labels]
+        views = ["frontal", "dorsal", "frontal", "frontal"]
+        azimuths = [180, 0, 0, -90]
+        fig_brain, axs = plt.subplots(1, 4, figsize=(12, 3))
+
+        for view, azimuth, ax in zip(views, azimuths, axs):
+
+                figure = create_3d_figure(size=(100, 100), bgcolor=(0, 0, 0))
+                Brain = get_brain_class()
+                brain = Brain("fsaverage", hemi="both", surf="pial", **brain_kwargs)
+
+                if bl2 is None:
+                        idx = bl_names.index(bl1)
+                        brain.add_label(brain_labels[idx], hemi="both", color='#d62728', borders=False, alpha=0.8)
+                
+                if bl2 is not None:
+
+                        for bl, color in zip([bl1, bl2], ['#1f77b4', '#d62728']):
+                                idx = bl_names.index(bl)
+                                brain.add_label(brain_labels[idx], hemi="both", color=color, borders=False, alpha=0.8)
+
+                brain.show_view(view=view, azimuth=azimuth)
+                img = brain.screenshot()  
+                ax.imshow(img)
+                ax.axis("off")
+        fig_brain.tight_layout()
+
+        return fig_brain
