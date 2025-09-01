@@ -60,6 +60,25 @@ def get_canonical_freqs(frange_name):
                                 f"Available options: {list(freq_bands.keys())}"
                                 )
 
+def get_params(config_file):
+        """
+        Update the default params (if necessary) and return the params for NF modality.
+        """
+        with open(self.config_file, "r") as f:
+                config = yaml.safe_load(f)
+
+        if modality not in config["NF_modality"]:
+                raise ValueError(f"Unknown modality {modality!r}, must be one of {list(config['NF_modality'].keys())}")
+
+        # get params for this modality
+        params = deepcopy(config["NF_modality"][modality])
+        if modality_params is not None:
+                for method, overrides in modality_params.items():
+                        if method not in params:
+                                raise ValueError(f"Unknown method {method!r} for modality {modality!r}. Available: {list(params.keys())}")
+                        params[method].update(overrides)   
+        return params
+
 def timed(function):
         """
         Decorator that measures execution time of a function.
