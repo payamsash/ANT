@@ -79,6 +79,7 @@ class NFRealtime:
                 artifact_rejection=False,
                 save_raw: bool = True,
                 save_nf_signal: bool = True,
+                config_file=None,
                 verbose=None,
                 ):
                 
@@ -119,6 +120,13 @@ class NFRealtime:
                 if not isinstance(save_nf_signal, bool):
                         raise ValueError("`save_nf_signal` must be True or False.")
 
+                if config_file.endswith(".yml") and os.path.isfile(config_file):
+                        config = config_file
+                elif config_file is None:
+                        config = Path.cwd() / "config" / "config.yml"
+                else:
+                        raise ValueError("`config_file` must be None or Path to a config file.")
+                        
                 # --- Assign attributes ---
                 self.subject_id = subject_id
                 self.visit = visit
@@ -129,11 +137,11 @@ class NFRealtime:
                 self.artifact_rejection = artifact_rejection
                 self.save_raw = save_raw
                 self.save_nf_signal = save_nf_signal
+                self.config_file = config
                 self.verbose = verbose
 
                 # --- Setup logging ---
                 set_log_level(verbose)
-
 
         def connect_to_lsl(self, chunk_size=10, n_repeat=inf,
                                 mock_lsl=False, fname=None,
@@ -231,9 +239,9 @@ class NFRealtime:
                 else:
                         self.stream.disconnect()
 
-        def record_main(self, duration, modality="sensor_power", modality_params=None):
+        def record_main(self, duration, modality="sensor_power", picks=None, winsize=1, modality_params=None):
                 """
-                Start baseline recording to extract useful features.
+                Start baseline recording to extract neural features.
 
                 Parameters
                 ----------
@@ -245,11 +253,12 @@ class NFRealtime:
                         dictionary of parameters to substitude default parameters.
                 """     
                 ## update the parameters
-                modality_params = update_params(modality_params, self._default_params, "NF_modality")
                 self.duration = duration
                 self.modality = modality
-                self._modality_params = modality_params[modality]
-                self._window_size = self._connection_params.Acquisition.winsize * self.rec_info["sfreq"]
+                self.winsize = winsize
+                self.window_size_s = self.winsize * self.rec_info["sfreq"]
+                self.params = get_params(self.config_file)
+                
                 nf_mod_prep = getattr(self, f"_{modality}_prep", None)
                 nf_mod = getattr(self, f"_{modality}", None)
                 
@@ -260,34 +269,40 @@ class NFRealtime:
 
                 # compute the necessary stuff for the modality
                 outputs = nf_mod_prep()
-
-                nf_data, acq_delays, method_delays = ([], [], [])
+                if estimate_delays:
+                        acq_delays, method_delays = [], []
+                
+                nf_data = []
                 t_start = local_clock()
                 while local_clock() < t_start + self.duration:
-                
-                        # record
                         tic = time.time()
                         data = self.stream.get_data(self.winsize, picks=self.picks)[0] # n_chs * n_times
-                        acq_delays.append(time.time() - tic)
-
-                        ## print(data.shape)
                         
-                        # check shape
-                        if data.shape[1] != self._window_size: continue
+                        if estimate_delays:
+                                acq_delays.append(time.time() - tic)
+                        
+                        print(data.shape)
+                        if data.shape[1] != self.window_size_s: continue
 
                         # add artifact correction
                         
                         #compute nf
-                        ## print("hh")
                         nf_data_, method_delay = nf_mod(data, *outputs)
-
-                        # append
                         nf_data.append(nf_data_)
-                        method_delays.append(method_delay)
+                        if estimate_delays:
+                                method_delays.append(method_delay)
 
                 self.nf_data = nf_data
                 self.acq_delays = acq_delays
                 self.method_delays = method_delays
+
+                for folder in ["neurofeedback", "delays", "main", "reports"]:
+                        os.makedirs(self.subject_dir / folder, exist_ok=True)
+
+                np.save(self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.npy", nf_data)
+                np.save(self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.npy", acq_delays)
+                np.save(self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.npy", method_delays)
+
         
         
         @property
