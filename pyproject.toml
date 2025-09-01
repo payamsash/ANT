@@ -18,8 +18,10 @@ dependencies = [
 ]
 license = {file = 'LICENSE'}
 maintainers = [
-    {email = 'payam.sadeghi74@email.com', name = 'Payam S. Shabestari'},
+    {email = 'payam.sadeghi74@gmail.com', name = 'Payam S. Shabestari'},
 ]
-name = 'ANT'
 readme = 'README.md'
 requires-python = '>=3.10'
+
+[tool.setuptools]
+packages = ["ant"]
