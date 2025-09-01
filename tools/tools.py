@@ -1,49 +1,19 @@
 import os.path as op
-from copy import deepcopy
-from warnings import warn
 import time
 
 import numpy as np
-from scipy.signal import butter
 from scipy import sparse
 from scipy.spatial.distance import pdist, squareform
-import matplotlib.pyplot as plt
-
 from scipy.signal import welch, periodogram, get_window
 from scipy.integrate import simpson
+
 from mne.time_frequency import psd_array_multitaper
-
-
+from mne.minimum_norm import make_inverse_operator
+from mne.datasets import fetch_fsaverage
+from mne import make_forward_solution, compute_raw_covariance
 
 from fooof import FOOOF
 from pyunlocbox import functions, solvers
-from mne.minimum_norm import make_inverse_operator
-from mne.datasets import fetch_fsaverage
-from mne.viz import create_3d_figure, get_brain_class
-from mne import (make_forward_solution, compute_raw_covariance,
-                read_source_spaces, read_labels_from_annot)
-
-
-def update_params(new_params, old_params, module):
-        
-        if new_params is None:
-                new_params = old_params[module]
-        else:
-                old_params_copy = deepcopy(old_params)
-                assert isinstance(new_params, dict), "Input params should be a dictionary."
-                assert module in ["LSL", "NF_modality"], "module should be either LSL or NF_modality."
-
-                if module == "LSL":
-                        for mod in list(new_params.keys()):
-                                old_params_copy[module][mod].update(new_params[mod]) 
-                if module == "NF_modality":
-                        for mod1 in list(new_params.keys()):
-                                for mod2 in list(new_params[mod1].keys()):
-                                        old_params_copy[module][mod1][mod2].update(new_params[mod1][mod2]) 
-
-                new_params = old_params_copy[module]
-
-        return new_params         
 
 def get_canonical_freqs(frange_name):
         """
@@ -450,37 +420,3 @@ def log_degree_barrier(
                                 rtol=rtol, verbosity="NONE")
 
         return squareform(problem["sol"])
-
-
-def plot_glass_brain(bl1, bl2=None):
-
-        brain_kwargs = dict(alpha=0.15, background="white", cortex="low_contrast", size=(800, 600))
-        brain_labels = read_labels_from_annot(subject='fsaverage', parc='aparc')
-        bl_names = [bl.name for bl in brain_labels]
-        views = ["frontal", "dorsal", "frontal", "frontal"]
-        azimuths = [180, 0, 0, -90]
-        fig_brain, axs = plt.subplots(1, 4, figsize=(12, 3))
-
-        for view, azimuth, ax in zip(views, azimuths, axs):
-
-                figure = create_3d_figure(size=(100, 100), bgcolor=(0, 0, 0))
-                Brain = get_brain_class()
-                brain = Brain("fsaverage", hemi="both", surf="pial", **brain_kwargs)
-
-                if bl2 is None:
-                        idx = bl_names.index(bl1)
-                        brain.add_label(brain_labels[idx], hemi="both", color='#d62728', borders=False, alpha=0.8)
-                
-                if bl2 is not None:
-
-                        for bl, color in zip([bl1, bl2], ['#1f77b4', '#d62728']):
-                                idx = bl_names.index(bl)
-                                brain.add_label(brain_labels[idx], hemi="both", color=color, borders=False, alpha=0.8)
-
-                brain.show_view(view=view, azimuth=azimuth)
-                img = brain.screenshot()  
-                ax.imshow(img)
-                ax.axis("off")
-        fig_brain.tight_layout()
-
-        return fig_brain
