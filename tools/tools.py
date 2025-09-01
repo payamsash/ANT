@@ -1,0 +1,486 @@
+import os.path as op
+from copy import deepcopy
+from warnings import warn
+import time
+
+import numpy as np
+from scipy.signal import butter
+from scipy import sparse
+from scipy.spatial.distance import pdist, squareform
+import matplotlib.pyplot as plt
+
+from scipy.signal import welch, periodogram, get_window
+from scipy.integrate import simpson
+from mne.time_frequency import psd_array_multitaper
+
+
+
+from fooof import FOOOF
+from pyunlocbox import functions, solvers
+from mne.minimum_norm import make_inverse_operator
+from mne.datasets import fetch_fsaverage
+from mne.viz import create_3d_figure, get_brain_class
+from mne import (make_forward_solution, compute_raw_covariance,
+                read_source_spaces, read_labels_from_annot)
+
+
+def update_params(new_params, old_params, module):
+        
+        if new_params is None:
+                new_params = old_params[module]
+        else:
+                old_params_copy = deepcopy(old_params)
+                assert isinstance(new_params, dict), "Input params should be a dictionary."
+                assert module in ["LSL", "NF_modality"], "module should be either LSL or NF_modality."
+
+                if module == "LSL":
+                        for mod in list(new_params.keys()):
+                                old_params_copy[module][mod].update(new_params[mod]) 
+                if module == "NF_modality":
+                        for mod1 in list(new_params.keys()):
+                                for mod2 in list(new_params[mod1].keys()):
+                                        old_params_copy[module][mod1][mod2].update(new_params[mod1][mod2]) 
+
+                new_params = old_params_copy[module]
+
+        return new_params         
+
+def get_canonical_freqs(frange_name):
+        """
+        Map a canonical frequency band name to its frequency range.
+
+        Parameters
+        ----------
+        frange_name : str
+                Name of the frequency band. Supported values include:
+                'delta', 'theta', 'alpha', 'lower_alpha', 'upper_alpha',
+                'smr', 'beta', 'lower_beta', 'upper_beta',
+                'gamma', 'lower_gamma', 'upper_gamma'.
+
+        Returns
+        -------
+        List[float]
+                Two-element list containing [low_freq, high_freq] in Hz.
+
+        Raises
+        ------
+        ValueError
+                If the provided frequency band name is not defined.
+        """
+        
+        freq_bands = {
+                        "delta": [0.5, 4],
+                        "theta": [4, 8],
+                        "alpha": [8, 13],
+                        "lower_alpha": [8, 10],
+                        "upper_alpha": [10, 13],
+                        "smr": [12, 15],
+                        "beta": [15, 30],
+                        "lower_beta": [15, 20],
+                        "upper_beta": [20, 30],
+                        "gamma": [30, 80],
+                        "lower_gamma": [30, 50],
+                        "upper_gamma" : [50, 80],
+                        }
+        try:
+                return freq_bands[frange_name]
+        except KeyError:
+                raise ValueError(
+                                f"Frequency range '{frange_name}' is not defined. "
+                                f"Available options: {list(freq_bands.keys())}"
+                                )
+
+def timed(function):
+        """
+        Decorator that measures execution time of a function.
+
+        Parameters
+        ----------
+        function : callable
+                Function to be timed.
+
+        Returns
+        -------
+        callable
+                Wrapped function that returns:
+                - The original return value(s).
+                - Execution time in seconds (float).
+        """
+        def wrapper(*args, **kwargs):
+                tic = time.perf_counter()
+                value = function(*args, **kwargs)
+                toc = time.perf_counter()
+                return value, toc - tic
+        return wrapper
+
+
+def compute_bandpower(
+                data,
+                fs,
+                method,
+                band,
+                relative,
+                window,
+                n_fft,
+                **kwargs,
+                ):
+        """
+        Compute the bandpower of EEG/MEG channels using various PSD estimation methods.
+
+        Parameters
+        ----------
+        data : array of shape (n_channels, n_samples)
+                Input time series data.
+        fs : float
+                Sampling frequency in Hz.
+        method : {'fft', 'periodogram', 'welch', 'multitaper'}
+                PSD estimation method:
+                - 'fft': direct FFT with windowing.
+                - 'periodogram': via scipy.signal.periodogram.
+                - 'welch': via scipy.signal.welch.
+                - 'multitaper': via mne.time_frequency.psd_array_multitaper.
+        band : tuple of float (low, high)
+                Frequency band of interest in Hz. Edges are included.
+        relative : bool, default=True
+                If True, returns relative bandpower (normalized by total power).
+        window : str, default='hann'
+                Window type for FFT (ignored for other methods).
+        n_fft : int | None, optional
+                Number of FFT points (for 'fft' method). Defaults to next power of 2 of signal length.
+        **kwargs : dict
+                Extra arguments passed to PSD estimation functions:
+                - 'periodogram': scipy.signal.periodogram
+                - 'welch': scipy.signal.welch
+                - 'multitaper': mne.time_frequency.psd_array_multitaper
+
+        Returns
+        -------
+        bandpower : ndarray of shape (n_channels,)
+                Bandpower of each channel in the given frequency range.
+        """
+        assert data.ndim == 2, "Input must be 2D: (n_channels, n_samples)"
+        assert len(band) == 2 and band[0] <= band[1], "Band must be (low, high) in Hz."
+
+        # PSD estimation
+        if method == "fft":
+                n_samples = data.shape[1]
+                n_fft = n_fft or int(2 ** np.ceil(np.log2(n_samples)))  # efficient FFT size
+                win = get_window(window, n_samples, fftbins=True)
+
+                # Apply window and compute FFT
+                data_win = data * win
+                freqs = np.fft.rfftfreq(n_fft, d=1 / fs)
+                psd = (np.abs(np.fft.rfft(data_win, n=n_fft)) ** 2) / (fs * np.sum(win**2))
+
+        elif method == "periodogram":
+                freqs, psd = periodogram(data, fs, **kwargs)
+
+        elif method == "welch":
+                freqs, psd = welch(data, fs, **kwargs)
+
+        elif method == "multitaper":
+                psd, freqs = psd_array_multitaper(data, fs, verbose="ERROR", **kwargs)
+
+        else:
+                raise ValueError(f"Unsupported method '{method}'. Choose fft, periodogram, welch, multitaper.")
+
+        # Bandpower computation
+        freq_res = freqs[1] - freqs[0]
+        mask = (freqs >= band[0]) & (freqs <= band[1])
+
+        bp = simpson(psd[:, mask], dx=freq_res)
+        if relative:
+                bp /= simpson(psd, dx=freq_res)
+
+        return bp
+
+
+def estimate_aperiodic_component(
+                raw_baseline,
+                picks,
+                psd_params,
+                fitting_params,
+                freq_range=(1, 20),
+                verbose=None
+                ):
+        """
+        Estimate the aperiodic (1/f) component of a PSD using FOOOF.
+
+        Parameters
+        ----------
+        raw_baseline : mne.io.BaseRaw
+                MNE Raw object containing baseline data.
+        picks : str | list
+                Channels to include in PSD computation.
+        psd_params : dict
+                Parameters passed to `raw_baseline.compute_psd()`.
+        fitting_params : dict
+                Parameters passed to the FOOOF model.
+        freq_range : tuple of float, optional (default=(1, 20))
+                Frequency range in Hz for fitting the model.
+        verbose : bool, optional
+                Whether to print FOOOF fitting progress.
+
+        Returns
+        -------
+        aperiodic_params : ndarray
+                Parameters of the aperiodic component (offset, slope, knee if used).
+        peak_params : ndarray
+                Parameters of oscillatory peaks identified in the spectrum.
+        """
+        spectrum = raw_baseline.compute_psd(picks=picks, **psd_params)
+        fm = FOOOF(**fitting_params, verbose=verbose)
+
+        fm.fit(
+                spectrum.freqs,
+                spectrum.get_data().mean(axis=0),
+                freq_range=freq_range
+        )
+        return fm.aperiodic_params_, fm.peak_params_
+
+
+def compute_inv_operator(
+                raw_baseline,
+                subject="fsaverage"
+                ):
+        """
+        Compute the inverse operator for EEG source localization.
+
+        This function sets up the forward and inverse models required
+        to project sensor-level EEG data into source space. Depending
+        on whether the subject is ``fsaverage`` or an individual, the
+        function handles source space, BEM, and coregistration steps
+        differently.
+
+        Parameters
+        ----------
+        raw_baseline : mne.io.Raw
+                The baseline raw EEG recording used to estimate the noise
+                covariance and forward model.
+        subject : str, default='fsaverage'
+                The subject identifier. If 'fsaverage', a template anatomy
+                provided by MNE is used. Otherwise, a subject-specific model
+                is built using individual MRI and digitization data.
+
+        Returns
+        -------
+        inverse_operator : dict
+                The inverse operator object created with MNE-Python. This can
+                be passed to functions such as ``apply_inverse`` or
+                ``apply_inverse_epochs`` to estimate source time courses.
+
+        Notes
+        -----
+        - If ``subject='fsaverage'``:
+                * Fetches the template FreeSurfer subject using
+                :func:`mne.datasets.fetch_fsaverage`.
+                * Uses precomputed fsaverage source space and BEM solution.
+                * Uses the default ``'fsaverage'`` trans file.
+
+        - If an individual subject is specified:
+                * Requires subject-specific source space and BEM setup.
+                * Runs an automatic coregistration using fiducials and ICP
+                alignment (with multiple iterations and nasion weighting).
+                * Builds a BEM model and solution with :func:`mne.make_bem_model`
+                and :func:`mne.make_bem_solution`.
+                * Estimates the head-MRI transform from the coregistration.
+        """
+
+        if subject == "fsaverage":
+                fs_dir = fetch_fsaverage()
+                src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
+                bem = op.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
+                trans = "fsaverage"
+                subjects_dir = None
+
+        else:
+                bem = sl_params["bem"]
+                src = sl_params["source"]
+
+                src = setup_source_space(subject=subject, subjects_dir=subjects_dir)
+                bem_model = make_bem_model(**kwargs)  
+                bem = make_bem_solution(bem_model)
+                coreg = Coregistration(epochs.info, fiducials='auto', **kwargs)
+                coreg.fit_fiducials()
+                coreg.fit_icp(n_iterations=40, nasion_weight=2.0) 
+                coreg.omit_head_shape_points(distance=5.0 / 1000)
+                coreg.fit_icp(n_iterations=40, nasion_weight=10)
+                trans = coreg.trans
+
+        
+        fwd = make_forward_solution(
+                                raw_baseline.info,
+                                trans=trans,
+                                src=src,
+                                bem=bem,
+                                meg=False,
+                                eeg=True
+                                )
+        noise_cov = compute_raw_covariance(raw_baseline, method="empirical")
+        inverse_operator = make_inverse_operator(raw_baseline.info, fwd, noise_cov)
+
+        return inverse_operator
+
+def weight_to_degree_map(n_nodes):
+        """
+        Construct linear mappings between edge weights and node degrees.
+
+        Given a graph with `n_nodes`, this function builds a sparse matrix
+        that maps edge weights to node degrees and its transpose. The
+        resulting linear operators are useful in graph optimization problems.
+
+        Parameters
+        ----------
+        n_nodes : int
+                Number of nodes in the graph.
+
+        Returns
+        -------
+        k : callable
+                Function mapping edge weights (1D array of length n_edges) to
+                node degrees (1D array of length n_nodes).
+        kt : callable
+                Function mapping node degrees back to edge weights.
+
+        Notes
+        -----
+        - The number of edges is ``n_edges = n_nodes * (n_nodes - 1) / 2``.
+        - Internally, constructs a sparse COO matrix of shape
+        ``(n_nodes, n_edges)``.
+        """
+
+        n_edges = n_nodes * (n_nodes - 1) // 2
+
+        row_idx1 = np.repeat(np.arange(n_nodes - 1), np.arange(n_nodes - 1, 0, -1))
+        row_idx2 = np.concatenate([np.arange(i + 1, n_nodes) for i in range(n_nodes - 1)])
+
+        row_idx = np.concatenate((row_idx1, row_idx2))
+        col_idx = np.concatenate((np.arange(n_edges), np.arange(n_edges)))
+        vals = np.ones(len(row_idx))
+
+        coo = sparse.coo_matrix((vals, (row_idx, col_idx)), shape=(n_nodes, n_edges))
+
+        return lambda w: coo.dot(w), lambda d: coo.T.dot(d)
+
+
+def log_degree_barrier(
+                signals,
+                dist_type,
+                alpha,
+                beta,
+                step,
+                w0=None,
+                max_iter,
+                rtol,
+                ):
+        """
+        Graph learning with a log-barrier degree constraint.
+
+        Builds a weighted graph from smooth signals by solving a convex
+        optimization problem with:
+        - distance fitting,
+        - log-barrier enforcing non-degenerate node degrees,
+        - quadratic regularization on edge weights.
+
+        Parameters
+        ----------
+        signals : array of shape (n_nodes, n_samples)
+                Input data (node-wise signals).
+        dist_type : str
+                Distance metric to use (passed to ``scipy.spatial.distance.pdist``).
+        alpha : float
+                Weight of the log-barrier degree penalty.
+        beta : float
+                Weight of the L2 regularization term.
+        step : float
+                Initial step size for the optimization.
+        w0 : array or None
+                Initial edge weights. If None, initialized to zeros.
+        max_iter : int
+                Maximum number of iterations for the solver.
+        rtol : float
+                Relative tolerance for convergence.
+
+        Returns
+        -------
+        graph_matrix : ndarray of shape (n_nodes, n_nodes)
+                Learned adjacency matrix of the graph.
+
+        Notes
+        -----
+        - Uses MLF-BF primal-dual solver (external `solvers` package).
+        - Relies on `functions.func` objects with custom eval/prox/grad.
+        - The optimization problem solved is of the form::
+
+                min_w  2 <w, z> - α Σ log(k(w)) + β ||w||²
+
+        where z are normalized pairwise distances and k(w) maps edge
+        weights to node degrees.
+
+        """
+        n_nodes = signals.shape[0]
+
+        # Compute pairwise distances and normalize
+        z = pdist(signals, dist_type)
+        z /= np.max(z)
+        w0 = np.zeros_like(z) if w0 is None else w0
+
+        # Degree operator
+        k, kt = weight_to_degree_map(n_nodes)
+        norm_k = np.sqrt(2 * (n_nodes - 1))
+
+        # Objective terms
+        f1 = functions.func()
+        f1._eval = lambda w: 2 * np.dot(w, z)
+        f1._prox = lambda w, gamma: np.maximum(0, w - 2 * gamma * z)
+
+        f2 = functions.func()
+        f2._eval = lambda w: -alpha * np.sum(np.log(np.maximum(np.finfo(float).eps, k(w))))
+        f2._prox = lambda d, gamma: np.maximum(0, 0.5 * (d + np.sqrt(d**2 + 4 * alpha * gamma)))
+
+        f3 = functions.func()
+        f3._eval = lambda w: beta * np.sum(w**2)
+        f3._grad = lambda w: 2 * beta * w
+        lipg = 2 * beta
+
+        # Solver setup
+        stepsize = step / (1 + lipg + norm_k)
+        solver = solvers.mlfbf(L=k, Lt=kt, step=stepsize)
+        problem = solvers.solve([f1, f2, f3], x0=w0, solver=solver, maxit=max_iter,
+                                rtol=rtol, verbosity="NONE")
+
+        return squareform(problem["sol"])
+
+
+def plot_glass_brain(bl1, bl2=None):
+
+        brain_kwargs = dict(alpha=0.15, background="white", cortex="low_contrast", size=(800, 600))
+        brain_labels = read_labels_from_annot(subject='fsaverage', parc='aparc')
+        bl_names = [bl.name for bl in brain_labels]
+        views = ["frontal", "dorsal", "frontal", "frontal"]
+        azimuths = [180, 0, 0, -90]
+        fig_brain, axs = plt.subplots(1, 4, figsize=(12, 3))
+
+        for view, azimuth, ax in zip(views, azimuths, axs):
+
+                figure = create_3d_figure(size=(100, 100), bgcolor=(0, 0, 0))
+                Brain = get_brain_class()
+                brain = Brain("fsaverage", hemi="both", surf="pial", **brain_kwargs)
+
+                if bl2 is None:
+                        idx = bl_names.index(bl1)
+                        brain.add_label(brain_labels[idx], hemi="both", color='#d62728', borders=False, alpha=0.8)
+                
+                if bl2 is not None:
+
+                        for bl, color in zip([bl1, bl2], ['#1f77b4', '#d62728']):
+                                idx = bl_names.index(bl)
+                                brain.add_label(brain_labels[idx], hemi="both", color=color, borders=False, alpha=0.8)
+
+                brain.show_view(view=view, azimuth=azimuth)
+                img = brain.screenshot()  
+                ax.imshow(img)
+                ax.axis("off")
+        fig_brain.tight_layout()
+
+        return fig_brain
