@@ -26,7 +26,7 @@ from mne_features.univariate import (
                                         compute_spect_entropy,
                                         compute_svd_entropy
                                         )
-from tools import *
+from ant.tools import *
 
 class NFRealtime:
         """
@@ -137,10 +137,16 @@ class NFRealtime:
                 # --- Setup logging ---
                 set_log_level(verbose)
 
-        def connect_to_lsl(self, chunk_size=10, n_repeat=inf,
-                                mock_lsl=False, fname=None,
-                                bufsize_baseline=4, bufsize_main=3,
-                                acquisition_delay=0.001, timeout=2):
+        def connect_to_lsl(
+                                self,
+                                chunk_size=10,
+                                mock_lsl=False,
+                                fname=None,
+                                bufsize_baseline=4,
+                                bufsize_main=3,
+                                acquisition_delay=0.001,
+                                timeout=2
+                                ):
                 """
                 Connect to the LSL stream.
 
@@ -159,13 +165,13 @@ class NFRealtime:
                         if self.stream.connected:
                                 self.stream.disconnect()
                 if mock_lsl and fname is None:
-                        fname = ""
+                        fname = Path.cwd() / "data" / "sample" / "sample_data.vhdr"
 
                 ## get the recording info and create the stream
                 self.source_id = uuid.uuid4().hex
                 if mock_lsl:
                         stream = Player(
-                                        fname
+                                        fname,
                                         chunk_size=chunk_size,
                                         n_repeat=n_repeat,
                                         source_id=self.source_id
