@@ -6,18 +6,29 @@ from mne.io import read_raw_brainvision
 from mne.label import select_sources
 from mne.datasets import fetch_fsaverage
 from mne import (
+                set_log_level,
                 rename_channels,
                 make_forward_solution,
                 read_labels_from_annot,
-                make_ad_hoc_cov)
+                make_ad_hoc_cov
+                )
 from mne.simulation import (
                             SourceSimulator,
                             simulate_raw,
                             add_noise
                             )
 
-def simulate_eeg_raw(brain_label, frequency, amplitude, duration,
-                    gap_duration, n_repetition, start, verbose=None):
+def simulate_eeg_raw(
+                    brain_label,
+                    frequency,
+                    amplitude,
+                    duration,
+                    gap_duration,
+                    n_repetition,
+                    start,
+                    iir_filter=[0.2, -0.2, 0.04],
+                    verbose=None
+                    ):
     """
     Generate simulated source estimates and raw data by adding an artificial signal in a desired brain label.
     
@@ -45,10 +56,12 @@ def simulate_eeg_raw(brain_label, frequency, amplitude, duration,
     Saves the simulated signal.
     """  
 
+    set_log_level(verbose=verbose)
+    
     ## load the data
-    data_dir = Path.cwd().parent.parent / "template_data" 
-    fname_vhdr = data_dir / "template_data.vhdr"
-    raw = read_raw_brainvision(fname_vhdr, preload=True, verbose=verbose)
+    data_dir = Path.cwd().parent / "data" 
+    fname_vhdr = data_dir / "sample" / "sample.vhdr" 
+    raw = read_raw_brainvision(fname_vhdr, preload=True)
 
     ## montaging and removing ecg channels
     new_ch_names = raw.info['ch_names'].copy()
@@ -56,13 +69,13 @@ def simulate_eeg_raw(brain_label, frequency, amplitude, duration,
     mapping = dict(zip(raw.info['ch_names'], new_ch_names))
     rename_channels(raw.info, mapping)
     raw.drop_channels(ch_names=["HRli", "HRre"], on_missing='raise')
-    raw.set_montage('standard_1020', on_missing='warn', verbose=verbose)
+    raw.set_montage("easycap-M1", on_missing='warn')
 
     ## download fsaverage files
-    fs_dir = fetch_fsaverage(verbose=True)
+    fs_dir = fetch_fsaverage()
     subjects_dir = op.dirname(fs_dir)
     subject = "fsaverage"
-    trans = "fsaverage"  # MNE has a built-in fsaverage transformation
+    trans = "fsaverage"
     src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
     bem = op.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
 
@@ -72,14 +85,22 @@ def simulate_eeg_raw(brain_label, frequency, amplitude, duration,
 
     ## put source activation
     tstep = 1.0 / raw.info["sfreq"]
-    selected_label = read_labels_from_annot(subject,
+    selected_label = read_labels_from_annot(
+                                            subject,
                                             regexp=brain_label,
-                                            subjects_dir=subjects_dir)[0]
-    
-    label = select_sources(subject, selected_label, location="center",
-                                    extent=1, grow_outside=True, 
-                                    subjects_dir=subjects_dir)
-    source_time_series = np.sin(2.0 * np.pi * frequency * np.arange(int(duration * raw.info["sfreq"])) * tstep) * 10e-9 * amplitude
+                                            subjects_dir=subjects_dir
+                                            )[0]
+    label = select_sources(
+                            subject,
+                            selected_label,
+                            location="center",
+                            extent=1,
+                            grow_outside=True, 
+                            subjects_dir=subjects_dir
+                            )
+    source_time_series = np.sin(2.0 * np.pi * frequency \
+                                                * np.arange(int(duration * raw.info["sfreq"])) * tstep) \
+                                                                                        * 10e-9 * amplitude
 
     gap_duration_s = gap_duration * raw.info["sfreq"]
     start_s = start * raw.info["sfreq"]
@@ -90,10 +111,11 @@ def simulate_eeg_raw(brain_label, frequency, amplitude, duration,
     source_simulator = SourceSimulator(fwd["src"], tstep=tstep)
     source_simulator.add_data(label, source_time_series, events)
     raw = simulate_raw(raw.info, source_simulator, forward=fwd)
-    cov = make_ad_hoc_cov(raw.info, verbose=verbose)
-    add_noise(raw, cov, iir_filter=[0.2, -0.2, 0.04])
+    cov = make_ad_hoc_cov(raw.info)
+    add_noise(raw, cov, iir_filter=iir_filter)
 
     ## save
-    saving_dir = Path.cwd().parent.parent / "simulated_data"
-    raw.save(fname=f"{saving_dir}/{brain_label}_{frequency}_{amplitude}-raw.fif")
+    sim_dir = data_dir / "simulated"
+    os.makedirs(sim_dir, exist_ok=True)
+    raw.save(fname=sim_dir / f"{brain_label}_{frequency}_{amplitude}-raw.fif")
     
