@@ -31,7 +31,8 @@ from mne_features.univariate import (compute_app_entropy,
 
 from tools import *
 
-
+from mne.channels import get_builtin_montages, read_dig_captrak
+from mne.io import RawArray
 
 class NFRealtime:
         """
@@ -73,6 +74,7 @@ class NFRealtime:
                 visit: int,
                 session: str,
                 subjects_dir: str,
+                montage: str,
                 mri: bool,
                 artifact_rejection=False,
                 save_raw: bool = True,
@@ -82,37 +84,47 @@ class NFRealtime:
                 
                 # --- Validation ---
                 if not isinstance(subject_id, str) or not subject_id.strip():
-                raise ValueError("`subject_id` must be a non-empty string.")
+                        raise ValueError("`subject_id` must be a non-empty string.")
 
                 if not isinstance(visit, int) or visit < 1:
-                raise ValueError("`visit` must be a positive integer (>= 1).")
+                        raise ValueError("`visit` must be a positive integer (>= 1).")
 
                 if session not in self.VALID_SESSIONS:
-                raise ValueError(f"`session` must be one of {self.VALID_SESSIONS}, got {session!r}.")
+                        raise ValueError(f"`session` must be one of {self.VALID_SESSIONS}, got {session!r}.")
 
-                if not isinstance(subjects_dir, str) or not os.path.isdir(subjects_dir):
-                raise ValueError(f"`subjects_dir` must be a valid directory path, got {subjects_dir!r}.")
+                if not (
+                        montage in get_builtin_montages()
+                        or (montage.endswith(".bvct") and os.path.isfile(montage))
+                        ):
+                        raise ValueError(
+                                f"`montage` must be one of the built-in montages {builtin} "
+                                f"or a valid '.bvct' file path. Got {montage!r}."
+                        )
 
+                if not isinstance(subject_id, str) or not subject_id.strip():
+                        raise ValueError("`subject_id` must be a non-empty string.")
+                
                 if not isinstance(mri, bool):
-                raise ValueError("`mri` must be a boolean (True/False).")
+                        raise ValueError("`mri` must be a boolean (True/False).")
 
                 if artifact_rejection not in self.VALID_ARTIFACT_METHODS:
-                raise ValueError(
-                        f"`artifact_rejection` must be one of {self.VALID_ARTIFACT_METHODS}, "
-                        f"got {artifact_rejection!r}."
-                )
+                        raise ValueError(
+                                f"`artifact_rejection` must be one of {self.VALID_ARTIFACT_METHODS}, "
+                                f"got {artifact_rejection!r}."
+                        )
 
                 if not isinstance(save_raw, bool):
-                raise ValueError("`save_raw` must be True or False.")
+                        raise ValueError("`save_raw` must be True or False.")
 
                 if not isinstance(save_nf_signal, bool):
-                raise ValueError("`save_nf_signal` must be True or False.")
+                        raise ValueError("`save_nf_signal` must be True or False.")
 
                 # --- Assign attributes ---
                 self.subject_id = subject_id
                 self.visit = visit
                 self.session = session
                 self.subjects_dir = subjects_dir
+                self.montage = montage
                 self.mri = mri
                 self.artifact_rejection = artifact_rejection
                 self.save_raw = save_raw
@@ -123,7 +135,10 @@ class NFRealtime:
                 set_log_level(verbose)
 
 
-        def connect_to_lsl(self, session, connection_params=None, mock_lsl=False):    
+        def connect_to_lsl(self, chunk_size=10, n_repeat=inf,
+                                mock_lsl=False, fname=None,
+                                bufsize_baseline=4, bufsize_main=3,
+                                acquisition_delay=0.001, timeout=2):
                 """
                 Connect to the LSL stream.
 
@@ -134,35 +149,49 @@ class NFRealtime:
                 mock_lsl : bool
                         If True a saved recording will be streamed.
                 """
-                ## update the parameters
-                self._connection_params = update_params(connection_params, self._default_params, "LSL")
-                self.mock_lsl = mock_lsl
-
+                self.subject_dir = Path(self.subjects_dir) / self.subject_id
+                os.makedirs(self.subject_dir, exist_ok=True)
+                
                 ## disconnect the previous streaming if any
                 if hasattr(self, "stream"): 
                         if self.stream.connected:
                                 self.stream.disconnect()
-                
+                if mock_lsl and fname is None:
+                        fname = ""
+
                 ## get the recording info and create the stream
-                if self.mock_lsl:
-                        self._player = Player(fname=self._connection_params.Mock_connection.fname,
-                                        chunk_size=self._connection_params.Mock_connection.chunk_size).start()
+                self.source_id = uuid.uuid4().hex
+                if mock_lsl:
+                        stream = Player(
+                                        fname
+                                        chunk_size=chunk_size,
+                                        n_repeat=n_repeat,
+                                        source_id=self.source_id
+                                        )
+                        if os.path.isfile(self.montage):
+                                montage = read_dig_captrak(self.montage)
+                        
+                        stream.set_montage(montage, on_missing="warn")
+                        stream.strat()
                 else:
-                        _stream = Stream(bufsize=self.connection_params.Baseline_acquisition.bufsize,
-                                                name=self.connection_params.Recorder.stream_name)
-
-                if session == "baseline":
-                        stream = Stream(self._connection_params.Baseline_acquisition.bufsize).connect(**self._connection_params.Connection)
-                if session == "main":
-                        stream = Stream(self._connection_params.Acquisition.bufsize).connect(**self._connection_params.Connection)
-
-                stream.pick("eeg")  # now only eeg
-                # stream.set_eeg_reference("average")
-                self._sfreq = stream.info["sfreq"]  
-                self.rec_info = stream.info
-                self.base_winsize = self._connection_params.Baseline_acquisition.winsize
-                self.winsize = self._connection_params.Acquisition.winsize
+                        if self.session == "baseline":
+                                self.bufsize = bufsize_baseline
+                        if self.session == "main":
+                                self.bufsize = bufsize_main
+                        
+                        stream = Stream(
+                                        bufsize=self.bufsize,
+                                        name=None,
+                                        source_id=source_id
+                                        )
+                        stream.set_montage(montage, on_missing="warn")
+                        stream.pick("eeg") # now only eeg
+                        # stream.set_eeg_reference("average")
+                        stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
+                        
                 self.stream = stream
+                self.sfreq = stream.info["sfreq"]  
+                self.rec_info = stream.info        
                 self.stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
 
                 ## copying attributes
@@ -170,21 +199,9 @@ class NFRealtime:
                         attr_value = getattr(self.stream, attr_name)
                         if callable(attr_value) and not attr_name.startswith("__") and attr_name != "plot_sensors":
                                 setattr(self, attr_name, attr_value)
-                
         
-        @property
-        def connection_params(self):
-                return self._connection_params
 
-        @connection_params.setter
-        def connection_params(self, params):
-                if not isinstance(params, dict):
-                        raise ValueError("Can only be a dictionary.")
-                else:
-                        self._connection_params = params
-        
-        
-        def record_baseline(self, baseline_duration):
+        def record_baseline(self, baseline_duration, winsize=3):
                 """
                 Start baseline recording to extract useful features.
 
@@ -195,22 +212,26 @@ class NFRealtime:
                 """
                 
                 self.baseline_duration = baseline_duration
-                time.sleep(self._connection_params.Baseline_acquisition.bufsize)
+                time.sleep(self.bufsize)
                 print("start")
                 data = [] 
                 t_start = local_clock()
                 while local_clock() < t_start + self.baseline_duration:
-                        
-                        data.append(self.stream.get_data(self.base_winsize)[0])
-                        time.sleep(self._connection_params.Baseline_acquisition.winsize)
+                        data.append(self.stream.get_data(winsize)[0])
+                        time.sleep(winsize)
 
                 data = np.concatenate(np.array(data), axis=1)
-                self.raw_baseline = mne.io.RawArray(data, self.rec_info)
-                self.stream.disconnect()
+                raw_baseline = RawArray(data, self.rec_info)
+                os.makedirs(self.subject_dir / "baseline", exist_ok=True)
+                fname_save = self.subject_dir / "baseline" / f"visit_{self.visit}-raw.fif"
+                raw_baselinse.save(fname_save, overwrite=True)
+                
                 if self.mock_lsl:
-                        self._player.stop()
+                        self.stream.stop()
+                else:
+                        self.stream.disconnect()
 
-        def record_nf(self, duration, modality="sensor_power", modality_params=None):
+        def record_main(self, duration, modality="sensor_power", modality_params=None):
                 """
                 Start baseline recording to extract useful features.
 
