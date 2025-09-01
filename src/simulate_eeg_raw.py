@@ -1,7 +1,7 @@
-import os.path as op
+import os
 from pathlib import Path
-
 import numpy as np
+
 from mne.io import read_raw_brainvision
 from mne.label import select_sources
 from mne.datasets import fetch_fsaverage
@@ -19,15 +19,15 @@ from mne.simulation import (
                             )
 
 def simulate_eeg_raw(
-                    brain_label,
-                    frequency,
-                    amplitude,
-                    duration,
-                    gap_duration,
-                    n_repetition,
-                    start,
-                    iir_filter=[0.2, -0.2, 0.04],
-                    verbose=None
+                        brain_label,
+                        frequency,
+                        amplitude,
+                        duration,
+                        gap_duration,
+                        n_repetition,
+                        start,
+                        iir_filter=[0.2, -0.2, 0.04],
+                        verbose=None
                     ):
     """
     Generate simulated source estimates and raw data by adding an artificial signal in a desired brain label.
@@ -61,8 +61,8 @@ def simulate_eeg_raw(
     set_log_level(verbose=verbose)
     
     ## load the data
-    data_dir = Path.cwd().parent / "data" 
-    fname_vhdr = data_dir / "sample" / "sample.vhdr" 
+    data_dir = Path.cwd() / "data" 
+    fname_vhdr = data_dir / "sample" / "sample_data.vhdr" 
     raw = read_raw_brainvision(fname_vhdr, preload=True)
 
     ## montaging and removing ecg channels
@@ -75,11 +75,11 @@ def simulate_eeg_raw(
 
     ## download fsaverage files
     fs_dir = fetch_fsaverage()
-    subjects_dir = op.dirname(fs_dir)
+    subjects_dir = os.path.dirname(fs_dir)
     subject = "fsaverage"
     trans = "fsaverage"
-    src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
-    bem = op.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
+    src = os.path.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
+    bem = os.path.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
 
     ## create forward solution
     fwd = make_forward_solution(raw.info, trans=trans, src=src, bem=bem)
@@ -119,5 +119,18 @@ def simulate_eeg_raw(
     ## save
     sim_dir = data_dir / "simulated"
     os.makedirs(sim_dir, exist_ok=True)
-    raw.save(fname=sim_dir / f"{brain_label}_{frequency}_{amplitude}-raw.fif")
+    raw.save(fname=sim_dir / f"{brain_label}_{frequency}Hz_{amplitude}-raw.fif")
     
+
+if __name__ == "__main__":
+    simulate_eeg_raw(
+                        brain_label="pericalcarine-lh",
+                        frequency=10,
+                        amplitude=2,
+                        duration=1,
+                        gap_duration=6,
+                        n_repetition=50,
+                        start=12,
+                        iir_filter=[0.2, -0.2, 0.04],
+                        verbose=None
+                        )
