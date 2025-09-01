@@ -15,6 +15,11 @@ dependencies = [
     'pyqtgraph',
     'qtpy',
     'scipy',
+    'fooof',
+    'pyunlocbox',
+    'mne-lsl',
+    'mne-connectivity',
+    'mne-features'
 ]
 license = {file = 'LICENSE'}
 maintainers = [
