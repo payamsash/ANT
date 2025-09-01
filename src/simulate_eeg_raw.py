@@ -50,6 +50,8 @@ def simulate_eeg_raw(
         number of repetition of the signal.
     start : str
         start time of the first simulated signal.
+    iir_filter : None | array_like
+        IIR filter coefficients (denominator)
     verbose : bool | str | int | None
         Control verbosity of the logging output.
 
