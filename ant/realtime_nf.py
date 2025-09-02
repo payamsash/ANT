@@ -19,7 +19,7 @@ from mne_lsl.lsl import local_clock
 from mne import set_log_level
 from mne.io import RawArray
 from mne.channels import get_builtin_montages, read_dig_captrak
-from mne.minimum_norm import apply_inverse_raw
+from mne.minimum_norm import apply_inverse_raw, write_inverse_operator
 from mne_connectivity import spectral_connectivity_time
 from mne_features.univariate import (
                                         compute_app_entropy,
@@ -28,6 +28,7 @@ from mne_features.univariate import (
                                         compute_svd_entropy
                                         )
 from ant.tools import *
+from ant.tools import _compute_inv_operator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -73,6 +74,8 @@ class NFRealtime:
                 subjects_dir: str,
                 montage: str,
                 mri: bool,
+                subject_fs_id: str = "fsaverage",
+                subjects_fs_dir: str = None,
                 artifact_rejection=False,
                 save_raw: bool = True,
                 save_nf_signal: bool = True,
@@ -105,6 +108,12 @@ class NFRealtime:
                 if not isinstance(mri, bool):
                         raise ValueError("`mri` must be a boolean (True/False).")
 
+                if not isinstance(subject_fs_id, str) or not subject_fs_id.strip():
+                        raise ValueError("`subject_fs_id` must be a non-empty string.")
+
+                if not (subjects_fs_dir is None or isinstance(subject_fs_id, str) or Path(subjects_fs_dir).isdir()):
+                        raise ValueError("`subject_fs_dir` must be None or path to a directory.")
+
                 if artifact_rejection not in self.VALID_ARTIFACT_METHODS:
                         raise ValueError(
                                 f"`artifact_rejection` must be one of {self.VALID_ARTIFACT_METHODS}, "
@@ -132,6 +141,8 @@ class NFRealtime:
                 self.subjects_dir = subjects_dir
                 self.montage = montage
                 self.mri = mri
+                self.subject_fs_id = subject_fs_id
+                self.subjects_fs_dir = subjects_fs_dir
                 self.artifact_rejection = artifact_rejection
                 self.save_raw = save_raw
                 self.save_nf_signal = save_nf_signal
@@ -231,7 +242,7 @@ class NFRealtime:
                 """
                 
                 self.baseline_duration = baseline_duration
-                time.sleep(self.bufsize)
+                #time.sleep(self.bufsize)
                 print("start")
                 data = [] 
                 t_start = local_clock()
@@ -243,12 +254,12 @@ class NFRealtime:
                 raw_baseline = RawArray(data, self.rec_info)
                 (self.subject_dir / "baseline").mkdir(parents=True, exist_ok=True)
                 fname_save = self.subject_dir / "baseline" / f"visit_{self.visit}-raw.fif"
-                raw_baselinse.save(fname_save, overwrite=True)
+                raw_baseline.save(fname_save, overwrite=True)
                 
-                if self.mock_lsl:
-                        self.stream.stop()
-                else:
-                        self.stream.disconnect()
+                self.raw_baseline = raw_baseline
+                (self.subject_dir / "inv").mkdir(parents=True, exist_ok=True)
+                self.compute_inv_operator()
+                self.stream.disconnect()
 
         def record_main(self, duration, modality="sensor_power", picks=None,
                         winsize=1, estimate_delays=False, modality_params=None):
@@ -673,6 +684,15 @@ class NFRealtime:
 
                 return list(self._default_params.NF_modality.keys())
         
+        def compute_inv_operator(self):
+                inv = _compute_inv_operator(self.raw_baseline,
+                                                subject_fs_id=self.subject_fs_id,
+                                                subjects_fs_dir=self.subjects_fs_dir)
+                write_inverse_operator(
+                                        fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif",
+                                        inv=inv,
+                                        overwrite=True
+                                        )
         
         def create_report(self, report_path=None, overwrite=True):
                 """
