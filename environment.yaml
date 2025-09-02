@@ -14,5 +14,6 @@ dependencies:
   - scikit-learn
   - fooof
   - pyunlocbox=0.5.2
+  - pyyaml
   - pip:
       - mne-lsl
