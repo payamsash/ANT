@@ -35,13 +35,14 @@ NF_modality:
   # Track the spectral power at the desired frequency over the selected electrodes.
     fft:
       freq_res: 1 # Frequency resolution of the power spectrum.
+    
 
   band_ratio: 
   # Track the power ratio between two frequency ranges over selected electrodes.
     fft:
       frange_1: [8, 13] # First frequecy range
       frange_2: [4, 8] # Second frequecy range
-      freq_res: 1 # Frequency resolution of the power spectrum.
+      
 
   individual_peak_power:
   # Track the power around the frequency with maximum activation..  
