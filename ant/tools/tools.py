@@ -1,5 +1,7 @@
 import os.path as op
 import time
+from copy import deepcopy
+import yaml
 
 import numpy as np
 from scipy import sparse
@@ -15,6 +17,15 @@ from mne import make_forward_solution, compute_raw_covariance
 from fooof import FOOOF
 from pyunlocbox import functions, solvers
 from functools import wraps
+
+def timed(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+                tic = time.perf_counter()
+                value = func(*args, **kwargs)
+                toc = time.perf_counter()
+                return value, toc - tic
+        return wrapper
 
 def get_canonical_freqs(frange_name):
         """
@@ -61,11 +72,11 @@ def get_canonical_freqs(frange_name):
                                 f"Available options: {list(freq_bands.keys())}"
                                 )
 
-def get_params(config_file):
+def get_params(config_file, modality, modality_params):
         """
         Update the default params (if necessary) and return the params for NF modality.
         """
-        with open(self.config_file, "r") as f:
+        with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
 
         if modality not in config["NF_modality"]:
@@ -80,93 +91,73 @@ def get_params(config_file):
                         params[method].update(overrides)   
         return params
 
-def timed(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-                tic = time.perf_counter()
-                value = func(*args, **kwargs)
-                toc = time.perf_counter()
-                return value, toc - tic
-        return wrapper
-
-
 def compute_bandpower(
-                data,
-                fs,
-                method,
-                band,
-                relative,
-                window,
-                n_fft,
-                **kwargs,
-                ):
+        data,
+        sfreq,
+        band,
+        method="fft",
+        relative=True,
+        window="hann",
+        n_fft=None,
+        **kwargs
+        ):
         """
         Compute the bandpower of EEG/MEG channels using various PSD estimation methods.
 
         Parameters
         ----------
-        data : array of shape (n_channels, n_samples)
+        data : ndarray, shape (n_channels, n_samples)
                 Input time series data.
-        fs : float
+        sfreq : float
                 Sampling frequency in Hz.
-        method : {'fft', 'periodogram', 'welch', 'multitaper'}
-                PSD estimation method:
-                - 'fft': direct FFT with windowing.
-                - 'periodogram': via scipy.signal.periodogram.
-                - 'welch': via scipy.signal.welch.
-                - 'multitaper': via mne.time_frequency.psd_array_multitaper.
-        band : tuple of float (low, high)
-                Frequency band of interest in Hz. Edges are included.
+        band : tuple of float
+                Frequency band of interest (low, high) in Hz.
+        method : {'fft', 'periodogram', 'welch', 'multitaper'}, default='fft'
+                PSD estimation method.
         relative : bool, default=True
-                If True, returns relative bandpower (normalized by total power).
+                Normalize by total power if True.
         window : str, default='hann'
-                Window type for FFT (ignored for other methods).
-        n_fft : int | None, optional
-                Number of FFT points (for 'fft' method). Defaults to next power of 2 of signal length.
-        **kwargs : dict
-                Extra arguments passed to PSD estimation functions:
-                - 'periodogram': scipy.signal.periodogram
-                - 'welch': scipy.signal.welch
-                - 'multitaper': mne.time_frequency.psd_array_multitaper
+                Window type (used only for 'fft').
+        n_fft : int | None
+                Number of FFT points (used only for 'fft').
+        **kwargs : additional keyword arguments
+                Passed to the respective PSD functions.
 
         Returns
         -------
-        bandpower : ndarray of shape (n_channels,)
-                Bandpower of each channel in the given frequency range.
+        bandpower : ndarray, shape (n_channels,)
+                Bandpower of each channel in the requested frequency band.
         """
         assert data.ndim == 2, "Input must be 2D: (n_channels, n_samples)"
-        assert len(band) == 2 and band[0] <= band[1], "Band must be (low, high) in Hz."
+        assert len(band) == 2 and band[0] <= band[1], "Band must be (low, high)"
 
-        # PSD estimation
+        n_channels, n_samples = data.shape
+        n_fft = n_fft or int(2 ** np.ceil(np.log2(n_samples)))
+
         if method == "fft":
-                n_samples = data.shape[1]
-                n_fft = n_fft or int(2 ** np.ceil(np.log2(n_samples)))  # efficient FFT size
                 win = get_window(window, n_samples, fftbins=True)
-
-                # Apply window and compute FFT
                 data_win = data * win
-                freqs = np.fft.rfftfreq(n_fft, d=1 / fs)
-                psd = (np.abs(np.fft.rfft(data_win, n=n_fft)) ** 2) / (fs * np.sum(win**2))
+                freqs = np.fft.rfftfreq(n_fft, d=1/sfreq)
+                psd = (np.abs(np.fft.rfft(data_win, n=n_fft)) ** 2) / (sfreq * np.sum(win**2))
 
         elif method == "periodogram":
-                freqs, psd = periodogram(data, fs, **kwargs)
+                freqs, psd = periodogram(data, sfreq, axis=1, **kwargs)
 
         elif method == "welch":
-                freqs, psd = welch(data, fs, **kwargs)
+                freqs, psd = welch(data, sfreq, axis=1, **kwargs)
 
         elif method == "multitaper":
-                psd, freqs = psd_array_multitaper(data, fs, verbose="ERROR", **kwargs)
+                psd, freqs = psd_array_multitaper(data, sfreq, axis=1, verbose="ERROR", **kwargs)
 
         else:
-                raise ValueError(f"Unsupported method '{method}'. Choose fft, periodogram, welch, multitaper.")
+                raise ValueError(f"Unsupported method '{method}'.")
 
-        # Bandpower computation
-        freq_res = freqs[1] - freqs[0]
+        # Frequency band selection
         mask = (freqs >= band[0]) & (freqs <= band[1])
-
-        bp = simpson(psd[:, mask], dx=freq_res)
+        freq_res = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+        bp = simpson(psd[:, mask], dx=freq_res, axis=1)
         if relative:
-                bp /= simpson(psd, dx=freq_res)
+                bp /= simpson(psd, dx=freq_res, axis=1)
 
         return bp
 
@@ -215,9 +206,10 @@ def estimate_aperiodic_component(
         return fm.aperiodic_params_, fm.peak_params_
 
 
-def compute_inv_operator(
+def _compute_inv_operator(
                 raw_baseline,
-                subject="fsaverage"
+                subject_fs_id="fsaverage",
+                subjects_fs_dir=None
                 ):
         """
         Compute the inverse operator for EEG source localization.
@@ -262,28 +254,26 @@ def compute_inv_operator(
                 * Estimates the head-MRI transform from the coregistration.
         """
 
-        if subject == "fsaverage":
+        if subject_fs_id == "fsaverage":
                 fs_dir = fetch_fsaverage()
                 src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
                 bem = op.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
                 trans = "fsaverage"
-                subjects_dir = None
 
         else:
                 bem = sl_params["bem"]
                 src = sl_params["source"]
 
-                src = setup_source_space(subject=subject, subjects_dir=subjects_dir)
-                bem_model = make_bem_model(**kwargs)  
+                src = setup_source_space(subject=subject_fs_id, subjects_dir=subjects_fs_dir)
+                bem_model = make_bem_model(subject=subject_fs_id, subjects_dir=subjects_fs_dir)  
                 bem = make_bem_solution(bem_model)
-                coreg = Coregistration(epochs.info, fiducials='auto', **kwargs)
+                coreg = Coregistration(raw_baseline.info, subject=subject_fs_id, subjects_dir=subjects_fs_dir, fiducials='auto')
                 coreg.fit_fiducials()
                 coreg.fit_icp(n_iterations=40, nasion_weight=2.0) 
                 coreg.omit_head_shape_points(distance=5.0 / 1000)
                 coreg.fit_icp(n_iterations=40, nasion_weight=10)
                 trans = coreg.trans
 
-        
         fwd = make_forward_solution(
                                 raw_baseline.info,
                                 trans=trans,
