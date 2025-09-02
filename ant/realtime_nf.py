@@ -238,7 +238,6 @@ class NFRealtime:
                 winsize : float
                         Size of the window of data to view. The window will view the last winsize * sfreq samples (ceiled) from the buffer.
                         If None, the entire buffer is returned.
-
                 """
                 
                 self.baseline_duration = baseline_duration
@@ -259,12 +258,19 @@ class NFRealtime:
                 self.raw_baseline = raw_baseline
                 (self.subject_dir / "inv").mkdir(parents=True, exist_ok=True)
                 self.compute_inv_operator()
-                self.stream.disconnect()
+                # self.stream.disconnect()
 
-        def record_main(self, duration, modality="sensor_power", picks=None,
-                        winsize=1, estimate_delays=False, modality_params=None):
+        def record_main(
+                        self,
+                        duration,
+                        modality="sensor_power",
+                        picks=None,
+                        winsize=1,
+                        estimate_delays=False,
+                        modality_params=None
+                        ):
                 """
-                Start baseline recording to extract neural features.
+                Start recording to extract neural features.
 
                 Parameters
                 ----------
@@ -272,29 +278,38 @@ class NFRealtime:
                         Desired duration of the main recording.
                 modality : str
                         The method to extract the neural feature used for neurofeedback (see notes).
+                picks : str | list | None
+                        Channel names to pick, if None, all will be selected.
+                winsize : float
+                        Size of the window of data to view. The window will view the last winsize * sfreq samples (ceiled) from the buffer.
+                        If None, the entire buffer is returned.
+                estimate_delays : bool
+                        if True, the acquisition and method delays will be saved.
                 modality_params : dict | None
-                        dictionary of parameters to substitude default parameters.
+                        dictionary of parameters to substitude default parameters. If None parameters from config file will be used.
                 """     
-                ## update the parameters
+                
                 self.duration = duration
                 self.modality = modality
+                self.picks = picks
+                self.modality_params = modality_params
                 self.winsize = winsize
                 self.window_size_s = self.winsize * self.rec_info["sfreq"]
-                self.params = get_params(self.config_file)
-                
+                self.estimate_delays = estimate_delays
+                self.params = get_params(self.config_file, self.modality, self.modality_params)
+
+                ## preparing the method
                 nf_mod_prep = getattr(self, f"_{modality}_prep", None)
                 nf_mod = getattr(self, f"_{modality}", None)
-                
                 if not callable(nf_mod):
                         raise NotImplementedError(f"{modality} modality not implemented yet.")
                 if "source" in self.modality:
                         assert self.picks is None, "picks should be None for source methods." 
-
-                # compute the necessary stuff for the modality
                 outputs = nf_mod_prep()
                 if estimate_delays:
                         acq_delays, method_delays = [], []
                 
+                ## now the real part!
                 nf_data = []
                 t_start = local_clock()
                 while local_clock() < t_start + self.duration:
@@ -326,309 +341,11 @@ class NFRealtime:
 
         @modality_params.setter
         def modality_params(self, params):
-                if not isinstance(params, dict):
+                if params is not None and not isinstance(params, dict):
                         raise ValueError("Can only be a dictionary.")
                 else:
-                        self._modality_params = params
-        
-        def _sensor_power_prep(self):
-                fft_window, _, freq_band_idxs, _ = compute_fft(sfreq=self._sfreq,
-                                                        winsize=self._connection_params.Acquisition.winsize,
-                                                        freq_range=self.freq_range,
-                                                        freq_res=self._modality_params.fft.freq_res)
-                return fft_window, freq_band_idxs
-        
-        @timed
-        def _sensor_power(self, data, fft_window, freq_band_idxs):
-                data = np.multiply(data, fft_window)
-                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-                return power
+                        self._modality_params = params or {}
 
-        def _argmax_freq_prep(self):
-                assert hasattr(self, "raw_baseline"), "Baseline recording should be done prior to this step."
-                ## extracting the aperiodic components from the baseline recording
-                ap_params, _ = estimate_aperiodic_component(raw_baseline=self.raw_baseline,
-                                        picks=self.picks, psd_params=self._modality_params.psd,
-                                        fitting_params=self._modality_params.psd_fitting,
-                                        verbose=self.verbose)
-                fft_window, freq_band, freq_band_idxs, _ = \
-                                compute_fft(sfreq=self._sfreq,
-                                                winsize=self._connection_params.Acquisition.winsize,
-                                                freq_range=self.freq_range,
-                                                freq_res=self._modality_params.fft.freq_res)
-                
-                ap_model = (10 ** ap_params[0]) / (freq_band ** ap_params[1])
-                gaussian = lambda freq_band, amplitude, mean, stddev: \
-                                amplitude * np.exp(-(freq_band - mean)**2 / (2 * stddev**2))
-                return fft_window, freq_band, freq_band_idxs, ap_model, gaussian
-
-        @timed
-        def _argmax_freq(self, data, fft_window, freq_band, freq_band_idxs, ap_model, gaussian):
-                data = np.multiply(data, fft_window)
-                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                total_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-                periodic_power = (total_power - ap_model).mean(axis=0)
-                try:
-                        popt, _ = curve_fit(gaussian, freq_band, periodic_power,
-                                                **self._modality_params.curve_fit)
-                        individual_peak = popt[1]
-                except RuntimeError:
-                        individual_peak = 0 
-                        warn(f"fitting failed and individual peak value is set to 0.")
-                return individual_peak
-        
-        def _band_ratio_prep(self):
-                fft_windows, _, freq_band_idxss, _ = zip(*(compute_fft(sfreq=self._sfreq,
-                                                        winsize=self._connection_params.Acquisition.winsize,
-                                                        freq_range=self._modality_params.fft[frange],
-                                                        freq_res=self._modality_params.fft.freq_res) \
-                                                        for frange in ["frange_1", "frange_2"]))
-                return fft_windows, freq_band_idxss
-        
-        @timed
-        def _band_ratio(self, data, fft_windows, freq_band_idxss):
-                data1 = np.multiply(data, fft_windows[0])
-                fftval = np.abs(np.fft.rfft(data1, axis=1) / data.shape[-1])
-                power1 = np.average(np.square(fftval[:, freq_band_idxss[0]]).T)
-                data2 = np.multiply(data, fft_windows[1])
-                fftval = np.abs(np.fft.rfft(data2, axis=1) / data.shape[-1])
-                power2 = np.average(np.square(fftval[:, freq_band_idxss[1]]).T)
-                ratio = power1 / power2
-                return ratio
-
-        def _individual_peak_power_prep(self):
-                ## extracting the periodic components from the baseline recording
-                _, peak_params_ = estimate_aperiodic_component(raw_baseline=self.raw_baseline,
-                                                                picks=self.picks, psd_params=self._modality_params.psd,
-                                                                fitting_params=self._modality_params.psd_fitting,
-                                                                verbose=self.verbose)
-                peak_params = [peak_param[0] for peak_param in peak_params_ if self.freq_range[0] < peak_param[0] < self.freq_range[1]]
-                if len(peak_params) == 1:
-                        cf = peak_params[0]
-                else:
-                        cf = (self.freq_range[0] + self.freq_range[1]) / 2
-                        warn(f"center frequency was set to the middle frequency in the selected frequency range.")
-                
-                ## compute power in a small range around individual peak
-                fft_window, _, _, frequencies = compute_fft(sfreq=self._sfreq,
-                                winsize=self.connection_params.Acquisition.winsize,
-                                freq_range=self.freq_range,
-                                freq_res=self._modality_params.fft.freq_res)
-                freq_var = self._modality_params.fft.freq_var
-                individual_freq_band_idxs = np.where(np.logical_and(cf - freq_var <= frequencies,
-                                                        frequencies <= cf + freq_var))[0]
-                return fft_window, individual_freq_band_idxs
-        
-        @timed
-        def _individual_peak_power(self, data, fft_window, individual_freq_band_idxs):
-                data = np.multiply(data, fft_window)
-                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                power = np.average(np.square(fftval[:, individual_freq_band_idxs]).T)
-                return power
-
-        def _entropy_prep(self):
-                entropy_method = self._modality_params.entropy_method
-                return entropy_method
-        
-        @timed
-        def _entropy(self, data, entropy_method):
-                match entropy_method:
-                        case "AppEn":
-                                ents = compute_app_entropy(data, self._modality_params.ent.emb_app,
-                                                        self._modality_params.ent.metric_app)
-                        case "SampEn":
-                                ents = compute_samp_entropy(data, self._modality_params.ent.emb_sample,
-                                                        self._modality_params.ent.metric_sample)
-                        case "Spectral":
-                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data,
-                                                        psd_method=self._modality_params.ent.psd_method)
-                        case "SVD":
-                                ents = compute_svd_entropy(data, self._modality_params.ent.tau,
-                                                        self._modality_params.ent.emb_svd)
-                return ents.mean()
-
-        def _source_power_prep(self):
-                fft_window, _, freq_band_idxs, _ = compute_fft(sfreq=self._sfreq,
-                                winsize=self._modality_params.fft.winsize,
-                                freq_range=self.freq_range,
-                                freq_res=self._modality_params.fft.freq_res)
-                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
-                                                parc=self._modality_params.src.atlas,
-                                                subjects_dir=self._modality_params.src.subjects_dir,
-                                                verbose=self.verbose)
-                bl_names = [bl.name for bl in bls]
-                bl_idx = bl_names.index(self._modality_params.src.bl)
-                brain_label = bls[bl_idx]
-                lambda2 = 1.0 / self._modality_params.src.snr ** 2
-                inverse_operator = create_inverse_operator(self.raw_baseline, self._modality_params.src,
-                                                        verbose=self.verbose)
-                return fft_window, freq_band_idxs, lambda2, brain_label, inverse_operator
-        
-        @timed
-        def _source_power(self, data, fft_window, freq_band_idxs, lambda2, brain_label, inverse_operator):
-                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
-                raw_data.set_eeg_reference("average", projection=True)
-                ## compute source activation and then power
-                stc_data = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2,
-                                        label=brain_label, **self._modality_params.inv_modeling,
-                                        verbose=self.verbose).data
-                stc_data = np.multiply(stc_data, fft_window)
-                fftval = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
-                stc_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-
-                return stc_power
-
-        def _sensor_connectivity_prep(self):
-                ch_names = self.rec_info["ch_names"]
-                chs = self._modality_params.channels.ch_names
-                indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
-                indices = tuple(indices)
-                freqs = np.linspace(self.freq_range[0], self.freq_range[1],
-                                        self._modality_params.channels.freq_res)
-                return indices, freqs
-        
-        @timed
-        def _sensor_connectivity(self, data, indices, freqs):
-                con = spectral_connectivity_time(data=data[np.newaxis,:], freqs=freqs,
-                                                indices=indices, average=False,
-                                                sfreq=self._sfreq, 
-                                                fmin=self.freq_range[0],
-                                                fmax=self.freq_range[1], 
-                                                faverage=True,
-                                                **self._modality_params.con,
-                                                verbose=self.verbose)
-                con_data = np.squeeze(con.get_data(output='dense'))[indices].mean()
-                return con_data
-
-        def _source_connectivity_prep(self):
-                assert self._modality_params.src.bl_1[-2:]=="lh", "first brain label should be selected from left hemisphere."
-                assert self._modality_params.src.bl_2[-2:]=="rh", "second brain label should be selected from right hemisphere."
-                
-                ## initiating the source space
-                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
-                                                parc=self._modality_params.src.atlas,
-                                                verbose=self.verbose)
-                bl_names = [bl.name for bl in bls]
-                merged_label = bls[bl_names.index(self._modality_params.src.bl_1)] + \
-                                bls[bl_names.index(self._modality_params.src.bl_2)]
-                
-                lambda2 = 1.0 / self._modality_params.src.snr ** 2
-                inverse_operator = create_inverse_operator(self.raw_baseline, self._modality_params.src,
-                                                        verbose=self.verbose)
-                freqs = np.linspace(self.freq_range[0], self.freq_range[1],
-                                        self._modality_params.fft.freq_res)
-                
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
-                                        order=self._modality_params.channels.order)
-                return merged_label, lambda2, inverse_operator, freqs, sos
-        
-        @timed
-        def _source_connectivity(self, data, merged_label, lambda2, inverse_operator, freqs, sos):
-                
-                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
-                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2,
-                        label=merged_label, **self._modality_params.inv_modeling,
-                        verbose=self.verbose)
-                stc_lh_data = stcs.lh_data.mean(axis=0)
-                stc_rh_data = stcs.rh_data.mean(axis=0)
-                
-                if self._modality_params.con.method == "corr":
-                        data_filt = sosfiltfilt(sos, np.array([stc_lh_data, stc_rh_data]))
-                        con_data = np.corrcoef(data_filt[0], data_filt[1])[0][1]
-                else:
-                        con = spectral_connectivity_time(data=np.array([[stc_lh_data, stc_rh_data]]),
-                                                        freqs=freqs,
-                                                        indices=None,
-                                                        average=False,
-                                                        sfreq=self._sfreq,
-                                                        fmin=self.freq_range[0],
-                                                        fmax=self.freq_range[1],
-                                                        faverage=True,
-                                                        **self._modality_params.con,
-                                                        verbose=self.verbose)
-                        con_data = np.squeeze(con.get_data(output='dense'))[1][0]
-                return con_data
-
-        def _sensor_graph_prep(self):
-                ch_names = self.rec_info["ch_names"]
-                chs = self._modality_params.channels.ch_names
-                indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
-                indices = tuple(indices)
-
-                ## initiating the filter
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
-                                        order=self._modality_params.channels.order)
-                return indices, sos
-        
-        @timed
-        def _sensor_graph(self, data, indices, sos):
-                data_filt = sosfiltfilt(sos, data)
-                graph_matrix = log_degree_barrier(data_filt, **self._modality_params.graph)
-                avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean()
-                return avg_edge
-        
-        def _source_graph_prep(self):
-                ## initiating the source space
-                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
-                                                parc=self._modality_params.src.atlas,
-                                                verbose=self.verbose)[:-1] # should work
-                bl_names = [bl.name for bl in bls]
-                (bl_idx1, bl_idx2) = (bl_names.index(self._modality_params.src.bl_1),
-                                        bl_names.index(self._modality_params.src.bl_2)) 
-                lambda2 = 1.0 / self._modality_params.src.snr ** 2
-                inverse_operator, src = create_inverse_operator(self.raw_baseline, self._modality_params.src,
-                                                                return_src=True, verbose=self.verbose)
-
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1],
-                                        self._sfreq, order=self._modality_params.src.order)
-                
-                return bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos
-        
-        @timed
-        def _source_graph(self, data, bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos):
-                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
-                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2, 
-                                        **self._modality_params.inv_modeling,
-                                        verbose=self.verbose)
-                tcs = stcs.extract_label_time_course(bls, src=src,
-                                                **self._modality_params.label_extraction,
-                                                verbose=self.verbose)
-                tcs_filt = sosfiltfilt(sos, tcs)
-                graph_matrix = log_degree_barrier(tcs_filt, **self._modality_params["graph"])
-                avg_edge = graph_matrix[bl_idx1][bl_idx2]
-
-                return avg_edge
-
-        def save(self, nf_data=True, acq_delay=True, method_delay=True, format="json"):
-                self.stream.disconnect()
-                for folder in ["neurofeedback", "delays", "main", "reports"]:
-                        (self.subject_dir / folder).mkdir(parents=True, exist_ok=True)
-
-                if format == "npy":
-                        np.save(self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.npy", self.nf_data)
-                        np.save(self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.npy", self.acq_delays)
-                        np.save(self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.npy", self.method_delays)
-                
-                if format == "json":
-                        if nf_data:
-                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.json"
-                                with open(fname, "w") as file:
-                                        json.dump(self.nf_data, file)
-                        if acq_delay:
-                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.json"
-                                with open(fname, "w") as file:
-                                        json.dump(self.acq_delays, file)
-                        if method_delay:
-                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.json"
-                                with open(fname, "w") as file:
-                                        json.dump(self.method_delays, file)
-
-        def get_push_interval(self):
-        
-                interval = self._connection_params.Mock_connection.chunk_size / self._sfreq
-                return interval
-        
         def get_default_params(self):
                 """
                 Return the default parameters in the .yml file.
@@ -681,18 +398,42 @@ class NFRealtime:
                 return fig_delays
 
         def get_methods_list(self):
-
                 return list(self._default_params.NF_modality.keys())
         
         def compute_inv_operator(self):
                 inv = _compute_inv_operator(self.raw_baseline,
                                                 subject_fs_id=self.subject_fs_id,
                                                 subjects_fs_dir=self.subjects_fs_dir)
+                self.inv = inv
                 write_inverse_operator(
                                         fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif",
                                         inv=inv,
                                         overwrite=True
                                         )
+
+        def save(self, nf_data=True, acq_delay=True, method_delay=True, format="json"):
+                self.stream.disconnect()
+                for folder in ["neurofeedback", "delays", "main", "reports"]:
+                        (self.subject_dir / folder).mkdir(parents=True, exist_ok=True)
+
+                if format == "npy":
+                        np.save(self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.npy", self.nf_data)
+                        np.save(self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.npy", self.acq_delays)
+                        np.save(self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.npy", self.method_delays)
+                
+                if format == "json":
+                        if nf_data:
+                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.json"
+                                with open(fname, "w") as file:
+                                        json.dump(self.nf_data, file)
+                        if acq_delay:
+                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.json"
+                                with open(fname, "w") as file:
+                                        json.dump(self.acq_delays, file)
+                        if method_delay:
+                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.json"
+                                with open(fname, "w") as file:
+                                        json.dump(self.method_delays, file)                                
         
         def create_report(self, report_path=None, overwrite=True):
                 """
@@ -740,3 +481,293 @@ class NFRealtime:
                         if not report_path.exists(): report_path.mkdir()
                 report_path = report_path / f"nf_report_subject_{self.subject_id}_modality_{self.modality}.html"
                 report.save(report_path, overwrite=overwrite)
+
+        ## --------------------------- Neural Feature Extraction Methods (preparation) --------------------------- ##
+        def _sensor_power_prep(self):
+                fft_window, _, freq_band_idxs, _ = compute_fft(sfreq=self._sfreq,
+                                                        winsize=self..winsize,
+                                                        freq_range=self.freq_range,
+                                                        freq_res=self._modality_params.fft.freq_res)
+                return fft_window, freq_band_idxs
+
+        
+        def _sensor_power_prep(self):
+                """
+                Precompute everything that does not change per data chunk.
+                
+                Returns a dict with precomputed parameters to feed into `_sensor_power`.
+                """
+                precomp = dict(sfreq=self.rec_info.info["sfreq"], freq_range=self.freq_range,
+                                method=sef._modality_params, **kwargs)
+                
+                if method == "fft":
+                        n_samples = int(self.rec_info.info["sfreq"] * self.winsize)
+                        precomp["window"] = np.hanning(n_samples)
+                        precomp["n_fft"] = kwargs.get("n_fft", int(2 ** np.ceil(np.log2(n_samples))))
+                
+                return precomp
+
+
+        def _argmax_freq_prep(self):
+                assert hasattr(self, "raw_baseline"), "Baseline recording should be done prior to this step."
+                ## extracting the aperiodic components from the baseline recording
+                ap_params, _ = estimate_aperiodic_component(raw_baseline=self.raw_baseline,
+                                        picks=self.picks, psd_params=self._modality_params.psd,
+                                        fitting_params=self._modality_params.psd_fitting,
+                                        verbose=self.verbose)
+                fft_window, freq_band, freq_band_idxs, _ = \
+                                compute_fft(sfreq=self._sfreq,
+                                                winsize=self._connection_params.Acquisition.winsize,
+                                                freq_range=self.freq_range,
+                                                freq_res=self._modality_params.fft.freq_res)
+                
+                ap_model = (10 ** ap_params[0]) / (freq_band ** ap_params[1])
+                gaussian = lambda freq_band, amplitude, mean, stddev: \
+                                amplitude * np.exp(-(freq_band - mean)**2 / (2 * stddev**2))
+                return fft_window, freq_band, freq_band_idxs, ap_model, gaussian
+
+        def _band_ratio_prep(self):
+                fft_windows, _, freq_band_idxss, _ = zip(*(compute_fft(sfreq=self._sfreq,
+                                                        winsize=self._connection_params.Acquisition.winsize,
+                                                        freq_range=self._modality_params.fft[frange],
+                                                        freq_res=self._modality_params.fft.freq_res) \
+                                                        for frange in ["frange_1", "frange_2"]))
+                return fft_windows, freq_band_idxss
+
+        def _individual_peak_power_prep(self):
+                ## extracting the periodic components from the baseline recording
+                _, peak_params_ = estimate_aperiodic_component(raw_baseline=self.raw_baseline,
+                                                                picks=self.picks, psd_params=self._modality_params.psd,
+                                                                fitting_params=self._modality_params.psd_fitting,
+                                                                verbose=self.verbose)
+                peak_params = [peak_param[0] for peak_param in peak_params_ if self.freq_range[0] < peak_param[0] < self.freq_range[1]]
+                if len(peak_params) == 1:
+                        cf = peak_params[0]
+                else:
+                        cf = (self.freq_range[0] + self.freq_range[1]) / 2
+                        warn(f"center frequency was set to the middle frequency in the selected frequency range.")
+                
+                ## compute power in a small range around individual peak
+                fft_window, _, _, frequencies = compute_fft(sfreq=self._sfreq,
+                                winsize=self.connection_params.Acquisition.winsize,
+                                freq_range=self.freq_range,
+                                freq_res=self._modality_params.fft.freq_res)
+                freq_var = self._modality_params.fft.freq_var
+                individual_freq_band_idxs = np.where(np.logical_and(cf - freq_var <= frequencies,
+                                                        frequencies <= cf + freq_var))[0]
+                return fft_window, individual_freq_band_idxs
+
+        def _entropy_prep(self):
+                entropy_method = self._modality_params.entropy_method
+                return entropy_method
+
+        def _source_power_prep(self):
+                fft_window, _, freq_band_idxs, _ = compute_fft(sfreq=self._sfreq,
+                                winsize=self._modality_params.fft.winsize,
+                                freq_range=self.freq_range,
+                                freq_res=self._modality_params.fft.freq_res)
+                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
+                                                parc=self._modality_params.src.atlas,
+                                                subjects_dir=self._modality_params.src.subjects_dir,
+                                                verbose=self.verbose)
+                bl_names = [bl.name for bl in bls]
+                bl_idx = bl_names.index(self._modality_params.src.bl)
+                brain_label = bls[bl_idx]
+                lambda2 = 1.0 / self._modality_params.src.snr ** 2
+                inverse_operator = create_inverse_operator(self.raw_baseline, self._modality_params.src,
+                                                        verbose=self.verbose)
+                return fft_window, freq_band_idxs, lambda2, brain_label, inverse_operator
+
+        def _sensor_connectivity_prep(self):
+                ch_names = self.rec_info["ch_names"]
+                chs = self._modality_params.channels.ch_names
+                indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
+                indices = tuple(indices)
+                freqs = np.linspace(self.freq_range[0], self.freq_range[1],
+                                        self._modality_params.channels.freq_res)
+                return indices, freqs
+
+        def _source_connectivity_prep(self):
+                assert self._modality_params.src.bl_1[-2:]=="lh", "first brain label should be selected from left hemisphere."
+                assert self._modality_params.src.bl_2[-2:]=="rh", "second brain label should be selected from right hemisphere."
+                
+                ## initiating the source space
+                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
+                                                parc=self._modality_params.src.atlas,
+                                                verbose=self.verbose)
+                bl_names = [bl.name for bl in bls]
+                merged_label = bls[bl_names.index(self._modality_params.src.bl_1)] + \
+                                bls[bl_names.index(self._modality_params.src.bl_2)]
+                
+                lambda2 = 1.0 / self._modality_params.src.snr ** 2
+                inverse_operator = create_inverse_operator(self.raw_baseline, self._modality_params.src,
+                                                        verbose=self.verbose)
+                freqs = np.linspace(self.freq_range[0], self.freq_range[1],
+                                        self._modality_params.fft.freq_res)
+                
+                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
+                                        order=self._modality_params.channels.order)
+                return merged_label, lambda2, inverse_operator, freqs, sos
+
+        def _sensor_graph_prep(self):
+                ch_names = self.rec_info["ch_names"]
+                chs = self._modality_params.channels.ch_names
+                indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
+                indices = tuple(indices)
+
+                ## initiating the filter
+                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
+                                        order=self._modality_params.channels.order)
+                return indices, sos
+
+        def _source_graph_prep(self):
+                ## initiating the source space
+                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
+                                                parc=self._modality_params.src.atlas,
+                                                verbose=self.verbose)[:-1] # should work
+                bl_names = [bl.name for bl in bls]
+                (bl_idx1, bl_idx2) = (bl_names.index(self._modality_params.src.bl_1),
+                                        bl_names.index(self._modality_params.src.bl_2)) 
+                lambda2 = 1.0 / self._modality_params.src.snr ** 2
+                inverse_operator, src = create_inverse_operator(self.raw_baseline, self._modality_params.src,
+                                                                return_src=True, verbose=self.verbose)
+
+                sos = butter_bandpass(self.freq_range[0], self.freq_range[1],
+                                        self._sfreq, order=self._modality_params.src.order)
+                
+                return bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos
+
+        ## --------------------------- Neural Feature Extraction Methods (main) --------------------------- ##
+        
+        @timed
+        def _sensor_power(self, data, fft_window, freq_band_idxs):
+                data = np.multiply(data, fft_window)
+                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
+                power = np.average(np.square(fftval[:, freq_band_idxs]).T)
+                return power
+
+        @timed
+        def _argmax_freq(self, data, fft_window, freq_band, freq_band_idxs, ap_model, gaussian):
+                data = np.multiply(data, fft_window)
+                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
+                total_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
+                periodic_power = (total_power - ap_model).mean(axis=0)
+                try:
+                        popt, _ = curve_fit(gaussian, freq_band, periodic_power,
+                                                **self._modality_params.curve_fit)
+                        individual_peak = popt[1]
+                except RuntimeError:
+                        individual_peak = 0 
+                        warn(f"fitting failed and individual peak value is set to 0.")
+                return individual_peak
+        
+        @timed
+        def _band_ratio(self, data, fft_windows, freq_band_idxss):
+                data1 = np.multiply(data, fft_windows[0])
+                fftval = np.abs(np.fft.rfft(data1, axis=1) / data.shape[-1])
+                power1 = np.average(np.square(fftval[:, freq_band_idxss[0]]).T)
+                data2 = np.multiply(data, fft_windows[1])
+                fftval = np.abs(np.fft.rfft(data2, axis=1) / data.shape[-1])
+                power2 = np.average(np.square(fftval[:, freq_band_idxss[1]]).T)
+                ratio = power1 / power2
+                return ratio
+
+        @timed
+        def _individual_peak_power(self, data, fft_window, individual_freq_band_idxs):
+                data = np.multiply(data, fft_window)
+                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
+                power = np.average(np.square(fftval[:, individual_freq_band_idxs]).T)
+                return power
+
+        @timed
+        def _entropy(self, data, entropy_method):
+                match entropy_method:
+                        case "AppEn":
+                                ents = compute_app_entropy(data, self._modality_params.ent.emb_app,
+                                                        self._modality_params.ent.metric_app)
+                        case "SampEn":
+                                ents = compute_samp_entropy(data, self._modality_params.ent.emb_sample,
+                                                        self._modality_params.ent.metric_sample)
+                        case "Spectral":
+                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data,
+                                                        psd_method=self._modality_params.ent.psd_method)
+                        case "SVD":
+                                ents = compute_svd_entropy(data, self._modality_params.ent.tau,
+                                                        self._modality_params.ent.emb_svd)
+                return ents.mean()
+
+        @timed
+        def _source_power(self, data, fft_window, freq_band_idxs, lambda2, brain_label, inverse_operator):
+                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
+                raw_data.set_eeg_reference("average", projection=True)
+                ## compute source activation and then power
+                stc_data = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2,
+                                        label=brain_label, **self._modality_params.inv_modeling,
+                                        verbose=self.verbose).data
+                stc_data = np.multiply(stc_data, fft_window)
+                fftval = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
+                stc_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
+
+                return stc_power
+
+        @timed
+        def _sensor_connectivity(self, data, indices, freqs):
+                con = spectral_connectivity_time(data=data[np.newaxis,:], freqs=freqs,
+                                                indices=indices, average=False,
+                                                sfreq=self._sfreq, 
+                                                fmin=self.freq_range[0],
+                                                fmax=self.freq_range[1], 
+                                                faverage=True,
+                                                **self._modality_params.con,
+                                                verbose=self.verbose)
+                con_data = np.squeeze(con.get_data(output='dense'))[indices].mean()
+                return con_data
+
+        @timed
+        def _source_connectivity(self, data, merged_label, lambda2, inverse_operator, freqs, sos):
+                
+                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
+                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2,
+                        label=merged_label, **self._modality_params.inv_modeling,
+                        verbose=self.verbose)
+                stc_lh_data = stcs.lh_data.mean(axis=0)
+                stc_rh_data = stcs.rh_data.mean(axis=0)
+                
+                if self._modality_params.con.method == "corr":
+                        data_filt = sosfiltfilt(sos, np.array([stc_lh_data, stc_rh_data]))
+                        con_data = np.corrcoef(data_filt[0], data_filt[1])[0][1]
+                else:
+                        con = spectral_connectivity_time(data=np.array([[stc_lh_data, stc_rh_data]]),
+                                                        freqs=freqs,
+                                                        indices=None,
+                                                        average=False,
+                                                        sfreq=self._sfreq,
+                                                        fmin=self.freq_range[0],
+                                                        fmax=self.freq_range[1],
+                                                        faverage=True,
+                                                        **self._modality_params.con,
+                                                        verbose=self.verbose)
+                        con_data = np.squeeze(con.get_data(output='dense'))[1][0]
+                return con_data
+
+        @timed
+        def _sensor_graph(self, data, indices, sos):
+                data_filt = sosfiltfilt(sos, data)
+                graph_matrix = log_degree_barrier(data_filt, **self._modality_params.graph)
+                avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean()
+                return avg_edge
+        
+        @timed
+        def _source_graph(self, data, bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos):
+                raw_data = mne.io.RawArray(data, self.rec_info, verbose=self.verbose)
+                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2, 
+                                        **self._modality_params.inv_modeling,
+                                        verbose=self.verbose)
+                tcs = stcs.extract_label_time_course(bls, src=src,
+                                                **self._modality_params.label_extraction,
+                                                verbose=self.verbose)
+                tcs_filt = sosfiltfilt(sos, tcs)
+                graph_matrix = log_degree_barrier(tcs_filt, **self._modality_params["graph"])
+                avg_edge = graph_matrix[bl_idx1][bl_idx2]
+
+                return avg_edge
