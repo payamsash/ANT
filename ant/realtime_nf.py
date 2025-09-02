@@ -4,6 +4,7 @@ import time
 from warnings import warn
 from pathlib import Path
 import json
+import uuid
 
 import datetime
 import numpy as np
@@ -27,6 +28,8 @@ from mne_features.univariate import (
                                         compute_svd_entropy
                                         )
 from ant.tools import *
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class NFRealtime:
         """
@@ -89,7 +92,7 @@ class NFRealtime:
 
                 if not (
                         montage in get_builtin_montages()
-                        or (montage.endswith(".bvct") and os.path.isfile(montage))
+                        or (montage.endswith(".bvct") and Path(montage).is_file())
                         ):
                         raise ValueError(
                                 f"`montage` must be one of the built-in montages {builtin} "
@@ -114,10 +117,11 @@ class NFRealtime:
                 if not isinstance(save_nf_signal, bool):
                         raise ValueError("`save_nf_signal` must be True or False.")
 
-                if config_file.endswith(".yml") and os.path.isfile(config_file):
+                if config_file is None:
+                        config = PROJECT_ROOT / "config.yml"
+                elif config_file.endswith(".yml") and Path(config_file).is_file():
                         config = config_file
-                elif config_file is None:
-                        config = Path.cwd() / "config" / "config.yml"
+                
                 else:
                         raise ValueError("`config_file` must be None or Path to a config file.")
                         
@@ -142,6 +146,7 @@ class NFRealtime:
                                 chunk_size=10,
                                 mock_lsl=False,
                                 fname=None,
+                                n_repeat=np.inf,
                                 bufsize_baseline=4,
                                 bufsize_main=3,
                                 acquisition_delay=0.001,
@@ -158,54 +163,56 @@ class NFRealtime:
                         If True a saved recording will be streamed.
                 """
                 self.subject_dir = Path(self.subjects_dir) / self.subject_id
-                os.makedirs(self.subject_dir, exist_ok=True)
+                self.subject_dir.mkdir(parents=True, exist_ok=True)
                 
                 ## disconnect the previous streaming if any
                 if hasattr(self, "stream"): 
                         if self.stream.connected:
                                 self.stream.disconnect()
                 if mock_lsl and fname is None:
-                        fname = Path.cwd() / "data" / "sample" / "sample_data.vhdr"
+                        fname = PROJECT_ROOT / "data" / "sample" / "sample_data.vhdr"
 
                 ## get the recording info and create the stream
+                if self.session == "baseline":
+                        self.bufsize = bufsize_baseline
+                if self.session == "main":
+                        self.bufsize = bufsize_main
+                if Path(self.montage).is_file():
+                        self.montage = read_dig_captrak(self.montage)
+
                 self.source_id = uuid.uuid4().hex
                 if mock_lsl:
-                        stream = Player(
+                        player = Player(
                                         fname,
                                         chunk_size=chunk_size,
                                         n_repeat=n_repeat,
                                         source_id=self.source_id
-                                        )
-                        if os.path.isfile(self.montage):
-                                montage = read_dig_captrak(self.montage)
-                        
-                        stream.set_montage(montage, on_missing="warn")
-                        stream.strat()
+                                        ).start()
+                        stream = Stream(bufsize=self.bufsize, source_id=self.source_id)
+                        stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
+                        stream.set_montage(self.montage, on_missing="warn")
+                        stream.pick("eeg")
+                        stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
+                        self.stream = stream
                 else:
-                        if self.session == "baseline":
-                                self.bufsize = bufsize_baseline
-                        if self.session == "main":
-                                self.bufsize = bufsize_main
-                        
                         stream = Stream(
                                         bufsize=self.bufsize,
                                         name=None,
                                         source_id=source_id
                                         )
-                        stream.set_montage(montage, on_missing="warn")
-                        stream.pick("eeg") # now only eeg
-                        # stream.set_eeg_reference("average")
                         stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
+                        stream.set_montage(montage, on_missing="warn")
+                        stream.pick("eeg")
+                        stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
+                        self.stream = stream
                         
-                self.stream = stream
                 self.sfreq = stream.info["sfreq"]  
-                self.rec_info = stream.info        
-                self.stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
+                self.rec_info = stream.info     
 
                 ## copying attributes
                 for attr_name in dir(self.stream):
                         attr_value = getattr(self.stream, attr_name)
-                        if callable(attr_value) and not attr_name.startswith("__") and attr_name != "plot_sensors":
+                        if callable(attr_value) and not attr_name.startswith("__"):
                                 setattr(self, attr_name, attr_value)
         
 
@@ -217,6 +224,10 @@ class NFRealtime:
                 ----------
                 baseline_duration : float
                         Desired duration of the baseline recording.
+                winsize : float
+                        Size of the window of data to view. The window will view the last winsize * sfreq samples (ceiled) from the buffer.
+                        If None, the entire buffer is returned.
+
                 """
                 
                 self.baseline_duration = baseline_duration
@@ -230,7 +241,7 @@ class NFRealtime:
 
                 data = np.concatenate(np.array(data), axis=1)
                 raw_baseline = RawArray(data, self.rec_info)
-                os.makedirs(self.subject_dir / "baseline", exist_ok=True)
+                (self.subject_dir / "baseline").mkdir(parents=True, exist_ok=True)
                 fname_save = self.subject_dir / "baseline" / f"visit_{self.visit}-raw.fif"
                 raw_baselinse.save(fname_save, overwrite=True)
                 
@@ -581,7 +592,7 @@ class NFRealtime:
         def save(self, nf_data=True, acq_delay=True, method_delay=True, format="json"):
                 self.stream.disconnect()
                 for folder in ["neurofeedback", "delays", "main", "reports"]:
-                        os.makedirs(self.subject_dir / folder, exist_ok=True)
+                        (self.subject_dir / folder).mkdir(parents=True, exist_ok=True)
 
                 if format == "npy":
                         np.save(self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.npy", self.nf_data)
@@ -623,26 +634,8 @@ class NFRealtime:
                 bufsize_view : int | float
                         Buffer/window size of the attached StreamReceiver.
                 """  
-                warn("Has some issues for now, will be fixed ....")
                 Viewer(stream_name=self.stream.name).start(bufsize=bufsize_view)
                 self.bufsize_view = bufsize_view
-
-        def plot_electrodes(self, kind="topomap"):
-                """
-                Plot sensors positions. Used sensors will be colored in red.
-                
-                Parameters
-                ----------
-                kind : str
-                        Whether to plot the sensors as 3d, topomap or as an interactive sensor selection dialog. 
-                        Available options 'topomap', '3d', 'select'.
-                """  
-                if self.picks is not None:
-                        self.rec_info["bads"].extend(self.picks)
-                else:
-                        self.rec_info["bads"].extend(self.rec_info["ch_names"])
-                self.fig_sensors = mne.viz.plot_sensors(info=self.rec_info, kind=kind, verbose=self.verbose)
-                self.rec_info["bads"] = []
         
         def plot_delays(self):
                 """
