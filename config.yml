@@ -13,12 +13,6 @@ NF_modality:
     frange_2: [4, 8] # Second frequecy range
     method: "welch" # other options are fft and multitaper
 
-  argmax_freq:
-  # Track the frequency at which the maximum activation occurs.
-    frange: [8, 13]
-    method: "welch" # Spectral estimation method "welch" or "multitaper"
-    p0: [1, 10, 1] # Initial guess for the parameters
-
   source_power:
   # Track the activation in a desired brain label.
     frange: [8, 13]
@@ -59,40 +53,18 @@ NF_modality:
     alpha: 1 # Regularization parameter acting on the log barrier
     beta: 1 # Regularization parameter controlling the density of the graph
 
-
-
-
-
-  individual_peak_power:
-  # Track the power around the frequency with maximum activation..  
-    psd:
-      method: "welch"
-      fmin: 0 # The lower bound on frequencies of interest to estimate power spectrum (note this should be smaller than lower bound of desired frequency range)
-      fmax: 80 # The upper bound on frequencies of interest to estimate power spectrum (note this should be larger than upper bound of desired frequency range)
-      tmin: null # First time to include, in seconds.
-      tmax: null # Last times to include, in seconds.
-      remove_dc: True # If True, the mean is subtracted from each segment before computing its spectrum.
-      n_jobs: 1 # The number of jobs to run in parallel. If -1, it is set to the number of CPU cores.
-    
-    psd_fitting:
-      peak_width_limits: [0.5, 12.0] # Limits on possible peak width, in Hz, as (lower_bound, upper_bound).
-      max_n_peaks: .inf # Maximum number of peaks to fit.
-      min_peak_height: 0.0 # Absolute threshold for detecting peaks. This threshold is defined in absolute units of the power spectrum (log power).
-      peak_threshold: 2.0 # Relative threshold for detecting peaks. This threshold is defined in relative units of the power spectrum (standard deviation).
-      aperiodic_mode: "fixed" # Which approach to take for fitting the aperiodic component. either "fixed" or "knee".
-    
-    fft:
-      freq_res: 1 # Frequency resolution of the power spectrum.
-      freq_var: 1 # Variation over the frequency with maximun activity.
-
   entropy:
   # Track the entropy
-    ent:
-      entropy_method: "Spectral" # The method to compute tthe entropy -> {"AppEn", "SampEn", "Spectral", "SVD"} 
-      emb_app: 2 # Embedding dimension.
-      metric_app: "chebyshev" # Name of the metric function used with KDTree.
-      emb_sample: 2 # Embedding dimension.
-      metric_sample: "chebyshev" # Name of the metric function used with KDTree.
-      psd_method: "welch" # Method used for the estimation of the Power Spectral Density (PSD). Valid methods are: 'welch', 'multitaper' or 'fft'.
-      tau: 2 # Delay (number of samples).
-      emb_svd: 10 # Embedding dimension.
+    frange: [8, 13]
+    method: "Spectral" # The method to compute tthe entropy -> {"AppEn", "SampEn", "Spectral", "SVD"} 
+    psd_method: "welch" # Method used for the estimation of the Power Spectral Density (PSD). Valid methods are: 'welch', 'multitaper' or 'fft'.
+
+  argmax_freq:
+  # Track the frequency at which the maximum activation occurs.
+    frange: [8, 13]
+    method: "welch" # Spectral estimation method "welch" or "multitaper"
+
+  individual_peak_power:
+  # Track the power around the frequency with maximum activation.
+    frange: [8, 13]  
+    method: "welch"
