@@ -562,8 +562,7 @@ class NFRealtime:
                 bls = read_labels_from_annot(
                                                 subject=self.subject_fs_id,
                                                 parc=self.params["atlas"],
-                                                subjects_dir=self.subjects_fs_dir,
-                                                verbose=self.verbose
+                                                subjects_dir=self.subjects_fs_dir
                                                 )
                 bl_names = [bl.name for bl in bls]
                 bl_idx = bl_names.index(self.params["brain_label"])
@@ -592,26 +591,30 @@ class NFRealtime:
                 return precomp
 
         def _source_connectivity_prep(self):
-                assert self._modality_params.src.bl_1[-2:]=="lh", "first brain label should be selected from left hemisphere."
-                assert self._modality_params.src.bl_2[-2:]=="rh", "second brain label should be selected from right hemisphere."
+                assert self.params["brain_label_1"][-2:] == "lh", "first brain label should be selected from left hemisphere."
+                assert self.params["brain_label_2"][-2:] == "rh", "second brain label should be selected from right hemisphere."
                 
                 ## initiating the source space
-                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
-                                                parc=self._modality_params.src.atlas,
-                                                verbose=self.verbose)
+                bls = read_labels_from_annot(
+                                                subject=self.subject_fs_id,
+                                                parc=self.params["atlas"],
+                                                subjects_dir=self.subjects_fs_dir
+                                                )
                 bl_names = [bl.name for bl in bls]
-                merged_label = bls[bl_names.index(self._modality_params.src.bl_1)] + \
-                                bls[bl_names.index(self._modality_params.src.bl_2)]
+                merged_label = bls[bl_names.index(self.params["brain_label_1"])] + \
+                                bls[bl_names.index(self.params["brain_label_2"])]
+                inverse_operator = read_inverse_operator(fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif")
+                freq_res = 6
+                freqs = np.linspace(self.params["frange"][0], self.params["frange"][1], freq_res)
                 
-                lambda2 = 1.0 / self._modality_params.src.snr ** 2
-                inverse_operator = create_inverse_operator(self.raw_baseline, self._modality_params.src,
-                                                        verbose=self.verbose)
-                freqs = np.linspace(self.freq_range[0], self.freq_range[1],
-                                        self._modality_params.fft.freq_res)
-                
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
-                                        order=self._modality_params.channels.order)
-                return merged_label, lambda2, inverse_operator, freqs, sos
+                precomp = {
+                                "merged_label": merged_label,
+                                "inverse_operator": inverse_operator,
+                                "freqs": freqs
+                        }
+
+                return precomp
+
 
         def _sensor_graph_prep(self):
                 ch_names = self.rec_info["ch_names"]
@@ -748,7 +751,7 @@ class NFRealtime:
                 stc_data = apply_inverse_raw(
                                                 raw_data,
                                                 inverse_operator,
-                                                lambda2= 1.0 / 9,
+                                                lambda2=1.0 / 9,
                                                 pick_ori="normal",
                                                 label=brain_label,
                                                 ).data
@@ -777,30 +780,33 @@ class NFRealtime:
                 return con_data
 
         @timed
-        def _source_connectivity(self, data, merged_label, lambda2, inverse_operator, freqs, sos):
-                
-                raw_data = RawArray(data, self.rec_info, verbose=self.verbose)
-                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2,
-                        label=merged_label, **self._modality_params.inv_modeling,
-                        verbose=self.verbose)
+        def _source_connectivity(self, data, merged_label, inverse_operator, freqs):
+                raw_data = RawArray(data, self.rec_info)
+                raw_data.set_eeg_reference("average", projection=True)
+                stcs = apply_inverse_raw(
+                                        raw_data,
+                                        inverse_operator,
+                                        lambda2=1.0 / 9,
+                                        pick_ori="normal",
+                                        label=merged_label
+                                        )
                 stc_lh_data = stcs.lh_data.mean(axis=0)
                 stc_rh_data = stcs.rh_data.mean(axis=0)
                 
-                if self._modality_params.con.method == "corr":
-                        data_filt = sosfiltfilt(sos, np.array([stc_lh_data, stc_rh_data]))
-                        con_data = np.corrcoef(data_filt[0], data_filt[1])[0][1]
-                else:
-                        con = spectral_connectivity_time(data=np.array([[stc_lh_data, stc_rh_data]]),
-                                                        freqs=freqs,
-                                                        indices=None,
-                                                        average=False,
-                                                        sfreq=self._sfreq,
-                                                        fmin=self.freq_range[0],
-                                                        fmax=self.freq_range[1],
-                                                        faverage=True,
-                                                        **self._modality_params.con,
-                                                        verbose=self.verbose)
-                        con_data = np.squeeze(con.get_data(output='dense'))[1][0]
+                con = spectral_connectivity_time(
+                                                data=np.array([[stc_lh_data, stc_rh_data]]),
+                                                freqs=freqs,
+                                                indices=None,
+                                                average=False,
+                                                sfreq=self._sfreq,
+                                                fmin=self.params["frange"][0],
+                                                fmax=self.params["frange"][1],
+                                                faverage=True,
+                                                mode=self.params["mode"],
+                                                method=self.params["method"],
+                                                n_cycles=5
+                                                )
+                con_data = np.squeeze(con.get_data(output='dense'))[1][0]
                 return con_data
 
         @timed
