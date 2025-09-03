@@ -498,24 +498,33 @@ class NFRealtime:
 
 
         def _argmax_freq_prep(self):
+                
                 assert hasattr(self, "raw_baseline"), "Baseline recording should be done prior to this step."
                 ## extracting the aperiodic components from the baseline recording
                 ap_params, _ = estimate_aperiodic_component(
                                                                 raw_baseline=self.raw_baseline,
                                                                 picks=self.picks,
-                                                                method=self.params["method"],
-                                                                verbose=self.verbose
+                                                                method=self.params["method"]
                                                                 )
                 fft_window, freq_band, freq_band_idxs, _ = \
-                                compute_fft(sfreq=self._sfreq,
-                                                winsize=self._connection_params.Acquisition.winsize,
-                                                freq_range=self.freq_range,
-                                                freq_res=self._modality_params.fft.freq_res)
+                                                        compute_fft(
+                                                                sfreq=self._sfreq,
+                                                                winsize=self.winsize,
+                                                                freq_range=self.params["frange"],
+                                                                freq_res=1
+                                                                )
                 
                 ap_model = (10 ** ap_params[0]) / (freq_band ** ap_params[1])
                 gaussian = lambda freq_band, amplitude, mean, stddev: \
                                 amplitude * np.exp(-(freq_band - mean)**2 / (2 * stddev**2))
-                return fft_window, freq_band, freq_band_idxs, ap_model, gaussian
+                precomp = {
+                        "fft_window": fft_window,
+                        "freq_band": freq_band,
+                        "freq_band_idxs": freq_band_idxs,
+                        "ap_model": ap_model,
+                        "gaussian": gaussian
+                        }
+                return precomp
 
         def _band_ratio_prep(self):
                 precomp = dict(
@@ -528,30 +537,44 @@ class NFRealtime:
 
         def _individual_peak_power_prep(self):
                 ## extracting the periodic components from the baseline recording
-                _, peak_params_ = estimate_aperiodic_component(raw_baseline=self.raw_baseline,
-                                                                picks=self.picks, psd_params=self._modality_params.psd,
-                                                                fitting_params=self._modality_params.psd_fitting,
-                                                                verbose=self.verbose)
-                peak_params = [peak_param[0] for peak_param in peak_params_ if self.freq_range[0] < peak_param[0] < self.freq_range[1]]
+                _, peak_params_ = estimate_aperiodic_component(
+                                                                raw_baseline=self.raw_baseline,
+                                                                picks=self.picks,
+                                                                method=self.params["method"]
+                                                                )
+                peak_params = [peak_param[0] for peak_param in peak_params_ if self.params["frange"][0] < peak_param[0] < self.params["frange"][1]]
+                
                 if len(peak_params) == 1:
                         cf = peak_params[0]
                 else:
-                        cf = (self.freq_range[0] + self.freq_range[1]) / 2
+                        cf = (self.params["frange"][0] + self.params["frange"][1]) / 2
                         warn(f"center frequency was set to the middle frequency in the selected frequency range.")
                 
                 ## compute power in a small range around individual peak
-                fft_window, _, _, frequencies = compute_fft(sfreq=self._sfreq,
-                                winsize=self.connection_params.Acquisition.winsize,
-                                freq_range=self.freq_range,
-                                freq_res=self._modality_params.fft.freq_res)
-                freq_var = self._modality_params.fft.freq_var
+                fft_window, _, _, frequencies = compute_fft(
+                                                                sfreq=self._sfreq,
+                                                                winsize=self.winsize,
+                                                                freq_range=self.params["frange"],
+                                                                freq_res=1
+                                                                )
+                freq_var = 1
                 individual_freq_band_idxs = np.where(np.logical_and(cf - freq_var <= frequencies,
                                                         frequencies <= cf + freq_var))[0]
-                return fft_window, individual_freq_band_idxs
+                precomp = {
+                                "fft_window": fft_window,
+                                "individual_freq_band_idxs": individual_freq_band_idxs
+                                }
+                return precomp
 
         def _entropy_prep(self):
-                entropy_method = self._modality_params.entropy_method
-                return entropy_method
+                sos = butter_bandpass(
+                                        self.params["frange"][0],
+                                        self.params["frange"][1],
+                                        self._sfreq,
+                                        order=5
+                                        )
+                precomp = {"sos": sos}
+                return precomp
 
         def _source_power_prep(self):
                 fft_window, _, freq_band_idxs, _ = compute_fft(
@@ -691,8 +714,7 @@ class NFRealtime:
                 total_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
                 periodic_power = (total_power - ap_model).mean(axis=0)
                 try:
-                        popt, _ = curve_fit(gaussian, freq_band, periodic_power,
-                                                **self._modality_params.curve_fit)
+                        popt, _ = curve_fit(gaussian, freq_band, periodic_power)
                         individual_peak = popt[1]
                 except RuntimeError:
                         individual_peak = 0 
@@ -725,7 +747,6 @@ class NFRealtime:
 
                 bp_1 = simpson(psd[:, mask_1], dx=freq_res, axis=1)
                 bp_2 = simpson(psd[:, mask_2], dx=freq_res, axis=1)
-
                 return bp_1.mean() / bp_2.mean()
 
         @timed
@@ -736,20 +757,17 @@ class NFRealtime:
                 return power
 
         @timed
-        def _entropy(self, data, entropy_method):
-                match entropy_method:
+        def _entropy(self, data, sos):
+                data_filt = sosfiltfilt(sos, data)
+                match self.params["method"]:
                         case "AppEn":
-                                ents = compute_app_entropy(data, self._modality_params.ent.emb_app,
-                                                        self._modality_params.ent.metric_app)
+                                ents = compute_app_entropy(data_filt)
                         case "SampEn":
-                                ents = compute_samp_entropy(data, self._modality_params.ent.emb_sample,
-                                                        self._modality_params.ent.metric_sample)
+                                ents = compute_samp_entropy(data_filt)
                         case "Spectral":
-                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data,
-                                                        psd_method=self._modality_params.ent.psd_method)
+                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=self.params["psd_method"])
                         case "SVD":
-                                ents = compute_svd_entropy(data, self._modality_params.ent.tau,
-                                                        self._modality_params.ent.emb_svd)
+                                ents = compute_svd_entropy(data_filt)
                 return ents.mean()
 
         @timed
@@ -768,7 +786,6 @@ class NFRealtime:
                 stc_data = np.multiply(stc_data, fft_window)
                 fftval = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
                 stc_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-
                 return stc_power
 
         @timed
