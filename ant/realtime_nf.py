@@ -631,20 +631,28 @@ class NFRealtime:
 
         def _source_graph_prep(self):
                 ## initiating the source space
-                bls = mne.read_labels_from_annot(subject=self._modality_params.src.subject,
-                                                parc=self._modality_params.src.atlas,
-                                                verbose=self.verbose)[:-1] # should work
+                bls = read_labels_from_annot(
+                                                subject=self.subject_fs_id,
+                                                parc=self.params["atlas"],
+                                                subjects_dir=self.subjects_fs_dir
+                                                )
                 bl_names = [bl.name for bl in bls]
-                (bl_idx1, bl_idx2) = (bl_names.index(self._modality_params.src.bl_1),
-                                        bl_names.index(self._modality_params.src.bl_2)) 
-                lambda2 = 1.0 / self._modality_params.src.snr ** 2
-                inverse_operator, src = create_inverse_operator(self.raw_baseline, self._modality_params.src,
-                                                                return_src=True, verbose=self.verbose)
+                bl_idxs = (bl_names.index(self.params["brain_label_1"]), bl_names.index(self.params["brain_label_2"])) 
+                inverse_operator = read_inverse_operator(fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif")
 
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1],
-                                        self._sfreq, order=self._modality_params.src.order)
-                
-                return bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos
+                sos = butter_bandpass(
+                                        self.params["frange"][0],
+                                        self.params["frange"][1],
+                                        self._sfreq,
+                                        order=5
+                                        )
+                precomp = {
+                                "bls": bls,
+                                "bl_idxs": bl_idxs,
+                                "inverse_operator": inverse_operator,
+                                "sos": sos,
+                        }
+                return precomp
 
         ## --------------------------- Neural Feature Extraction Methods (main) --------------------------- ##
 
@@ -824,16 +832,27 @@ class NFRealtime:
                 return avg_edge
         
         @timed
-        def _source_graph(self, data, bls, bl_idx1, bl_idx2, lambda2, inverse_operator, src, sos):
-                raw_data = RawArray(data, self.rec_info, verbose=self.verbose)
-                stcs = apply_inverse_raw(raw_data, inverse_operator, lambda2=lambda2, 
-                                        **self._modality_params.inv_modeling,
-                                        verbose=self.verbose)
-                tcs = stcs.extract_label_time_course(bls, src=src,
-                                                **self._modality_params.label_extraction,
-                                                verbose=self.verbose)
+        def _source_graph(self, data, bls, bl_idxs, inverse_operator, sos):
+                raw_data = RawArray(data, self.rec_info)
+                raw_data.set_eeg_reference("average", projection=True)
+                stcs = apply_inverse_raw(
+                                        raw_data,
+                                        inverse_operator,
+                                        lambda2=1 / 9.0, 
+                                        pick_ori="normal"
+                                        )
+                tcs = stcs.extract_label_time_course(
+                                                        bls,
+                                                        src=inverse_operator["src"],
+                                                        mode='mean_flip',
+                                                        allow_empty=True
+                                                )
                 tcs_filt = sosfiltfilt(sos, tcs)
-                graph_matrix = log_degree_barrier(tcs_filt, **self._modality_params["graph"])
-                avg_edge = graph_matrix[bl_idx1][bl_idx2]
-
+                graph_matrix = log_degree_barrier(
+                                                tcs_filt,
+                                                dist_type=self.params["dist_type"],
+                                                alpha=self.params["alpha"],
+                                                beta=self.params["beta"]
+                                                )
+                avg_edge = graph_matrix[bl_idxs[0]][bl_idxs[1]]
                 return avg_edge
