@@ -29,6 +29,8 @@ from mne_features.univariate import (
                                         )
 from ant.tools import *
 from ant.tools import _compute_inv_operator
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtCore, QtWidgets
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -267,7 +269,8 @@ class NFRealtime:
                         picks=None,
                         winsize=1,
                         estimate_delays=False,
-                        modality_params=None
+                        modality_params=None,
+                        visualize_nf=True
                         ):
                 """
                 Start recording to extract neural features.
@@ -298,6 +301,7 @@ class NFRealtime:
                 self.estimate_delays = estimate_delays
                 self.params = get_params(self.config_file, self.modality, self.modality_params)
                 self._sfreq = self.rec_info["sfreq"]
+                self.visualize_nf = visualize_nf
 
                 ## preparing the method
                 nf_mod_prep = getattr(self, f"_{modality}_prep", None)
@@ -309,6 +313,21 @@ class NFRealtime:
                 precomp = nf_mod_prep()
                 if estimate_delays:
                         acq_delays, method_delays = [], []
+                
+                ## add vizualisation
+                if self.visualize_nf:
+                        self.app = QtWidgets.QApplication([])
+                        self.win = pg.GraphicsLayoutWidget(show=True, title="Neurofeedback real-time plot")
+                        self.win.resize(800, 400)
+                        self.win.setWindowTitle("NF Data")
+
+                        self.plot = self.win.addPlot(title="NF Data")
+                        self.curve = self.plot.plot(pen='y')
+                        self.plot.setLabel('bottom', 'Time', units='samples')
+                        self.plot.setLabel('left', 'Value', units='a.u.')
+
+                        # rolling buffer
+                        self.plot_data = np.zeros(500)
                 
                 ## now the real part!
                 nf_data = []
@@ -323,16 +342,18 @@ class NFRealtime:
 
                         ## add artifact correction
 
-
-                        ## add vizualisation
-
-
                         ## compute nf
                         nf_data_, method_delay = nf_mod(data, **precomp)
                         print(nf_data_)
                         nf_data.append(nf_data_)
                         if estimate_delays:
                                 method_delays.append(method_delay)
+
+                        ## add vizualisation
+                        if self.visualize_nf:
+                                self.update_nf_plot(nf_data_)
+                                self.app.processEvents()
+                                time.sleep(0.01)
 
                 self.nf_data = nf_data
                 if estimate_delays:
@@ -341,6 +362,8 @@ class NFRealtime:
                         self.save(nf_data=True, acq_delay=True, method_delay=True, format="json")
                 else:
                         self.save(nf_data=True, acq_delay=False, method_delay=False, format="json")
+
+                self.app.exec()
         
         @property
         def modality_params(self):
@@ -362,6 +385,11 @@ class NFRealtime:
         
         ## --------------------------- General Methods --------------------------- ##
 
+        def update_nf_plot(self, new_val):
+                self.plot_data = np.roll(self.plot_data, -1)
+                self.plot_data[-1] = new_val
+                self.curve.setData(self.plot_data)
+        
         def plot_rt(self, bufsize_view=0.2):
                 """
                 Visualize the signals coming from the LSL stream.
