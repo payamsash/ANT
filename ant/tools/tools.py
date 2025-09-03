@@ -13,6 +13,7 @@ from scipy.integrate import simpson
 from mne.time_frequency import psd_array_multitaper
 from mne.minimum_norm import make_inverse_operator
 from mne.datasets import fetch_fsaverage
+from mne.viz import create_3d_figure, get_brain_class
 from mne import make_forward_solution, compute_raw_covariance
 
 from fooof import FOOOF
@@ -431,3 +432,37 @@ def log_degree_barrier(
                                 rtol=rtol, verbosity="NONE")
 
         return squareform(problem["sol"])
+
+
+def plot_glass_brain(bl1, bl2=None):
+
+        brain_kwargs = dict(alpha=0.15, background="white", cortex="low_contrast", size=(800, 600))
+        brain_labels = read_labels_from_annot(subject='fsaverage', parc='aparc')
+        bl_names = [bl.name for bl in brain_labels]
+        views = ["frontal", "dorsal", "frontal", "frontal"]
+        azimuths = [180, 0, 0, -90]
+        fig_brain, axs = plt.subplots(1, 4, figsize=(12, 3))
+
+        for view, azimuth, ax in zip(views, azimuths, axs):
+
+                figure = create_3d_figure(size=(100, 100), bgcolor=(0, 0, 0))
+                Brain = get_brain_class()
+                brain = Brain("fsaverage", hemi="both", surf="pial", **brain_kwargs)
+
+                if bl2 is None:
+                        idx = bl_names.index(bl1)
+                        brain.add_label(brain_labels[idx], hemi="both", color='#d62728', borders=False, alpha=0.8)
+                
+                if bl2 is not None:
+
+                        for bl, color in zip([bl1, bl2], ['#1f77b4', '#d62728']):
+                                idx = bl_names.index(bl)
+                                brain.add_label(brain_labels[idx], hemi="both", color=color, borders=False, alpha=0.8)
+
+                brain.show_view(view=view, azimuth=azimuth)
+                img = brain.screenshot()  
+                ax.imshow(img)
+                ax.axis("off")
+        fig_brain.tight_layout()
+
+        return fig_brain
