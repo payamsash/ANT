@@ -16,7 +16,7 @@ from mne_lsl.player import PlayerLSL as Player
 from mne_lsl.stream_viewer import StreamViewer as Viewer
 from mne_lsl.lsl import local_clock
 
-from mne import set_log_level, read_labels_from_annot
+from mne import set_log_level, read_labels_from_annot, Report
 from mne.io import RawArray
 from mne.channels import get_builtin_montages, read_dig_captrak
 from mne.minimum_norm import apply_inverse_raw, write_inverse_operator, read_inverse_operator
@@ -321,9 +321,13 @@ class NFRealtime:
                         print(data.shape)
                         if data.shape[1] != self.window_size_s: continue
 
-                        # add artifact correction
-                        
-                        #compute nf
+                        ## add artifact correction
+
+
+                        ## add vizualisation
+
+
+                        ## compute nf
                         nf_data_, method_delay = nf_mod(data, **precomp)
                         print(nf_data_)
                         nf_data.append(nf_data_)
@@ -356,6 +360,8 @@ class NFRealtime:
                 """     
                 return self._default_params
         
+        ## --------------------------- General Methods --------------------------- ##
+
         def plot_rt(self, bufsize_view=0.2):
                 """
                 Visualize the signals coming from the LSL stream.
@@ -438,7 +444,7 @@ class NFRealtime:
                                 with open(fname, "w") as file:
                                         json.dump(self.method_delays, file)                                
         
-        def create_report(self, report_path=None, overwrite=True):
+        def create_report(self, overwrite=True):
                 """
                 Create a report in HTML format for the subject.
                 
@@ -449,7 +455,7 @@ class NFRealtime:
                 overwrite : bool
                         If True, overwrite the destination file if it exists.
                 """  
-                report = mne.Report(title=f"Neurofeedback Session with {self.modality} modality")
+                report = Report(title=f"Neurofeedback Session with {self.modality} modality")
                 report.add_raw(self.raw_baseline, title="Baseline recording", psd=False, butterfly=False)
 
                 methods_list = list(self._default_params.NF_modality.keys())
@@ -462,8 +468,8 @@ class NFRealtime:
                         fig_sensors = plt.figure(figsize=(10, 5))
                         ax1 = fig_sensors.add_subplot(121)
                         ax2 = fig_sensors.add_subplot(122, projection='3d')
-                        mne.viz.plot_sensors(info=self.rec_info, kind="topomap", axes=ax1, show=False, verbose=False)
-                        mne.viz.plot_sensors(info=self.rec_info, kind="3d", axes=ax2, show=False, verbose=False)
+                        mne.viz.plot_sensors(info=self.rec_info, kind="topomap", axes=ax1, show=False)
+                        mne.viz.plot_sensors(info=self.rec_info, kind="3d", axes=ax2, show=False)
                         ax2.axis("off")
                         self.rec_info["bads"] = []
                         report.add_figure(fig=fig_sensors, title="Sensors")
