@@ -161,12 +161,21 @@ def compute_bandpower(
 
         return bp
 
+def compute_fft(sfreq, winsize, freq_range, freq_res=1):
+        
+        winsize_in_samples = sfreq * winsize
+        frequencies = np.fft.rfftfreq(n=int(winsize_in_samples)*freq_res, d=1/sfreq) 
+        freq_band_idxs = np.where(np.logical_and(freq_range[0]<=frequencies, frequencies<=freq_range[1]))[0]
+        freq_band = frequencies[freq_band_idxs]
+        fft_window = np.hanning(winsize_in_samples)
+
+        return fft_window, freq_band, freq_band_idxs, frequencies
+
 
 def estimate_aperiodic_component(
                 raw_baseline,
                 picks,
-                psd_params,
-                fitting_params,
+                method,
                 freq_range=(1, 20),
                 verbose=None
                 ):
@@ -181,8 +190,7 @@ def estimate_aperiodic_component(
                 Channels to include in PSD computation.
         psd_params : dict
                 Parameters passed to `raw_baseline.compute_psd()`.
-        fitting_params : dict
-                Parameters passed to the FOOOF model.
+
         freq_range : tuple of float, optional (default=(1, 20))
                 Frequency range in Hz for fitting the model.
         verbose : bool, optional
@@ -195,8 +203,8 @@ def estimate_aperiodic_component(
         peak_params : ndarray
                 Parameters of oscillatory peaks identified in the spectrum.
         """
-        spectrum = raw_baseline.compute_psd(picks=picks, **psd_params)
-        fm = FOOOF(**fitting_params, verbose=verbose)
+        spectrum = raw_baseline.compute_psd(picks=picks, method=method, fmax=80)
+        fm = FOOOF(verbose=verbose)
 
         fm.fit(
                 spectrum.freqs,
