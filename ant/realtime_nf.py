@@ -587,7 +587,6 @@ class NFRealtime:
                                 "indices": indices,
                                 "freqs": freqs
                         }
-                
                 return precomp
 
         def _source_connectivity_prep(self):
@@ -612,20 +611,23 @@ class NFRealtime:
                                 "inverse_operator": inverse_operator,
                                 "freqs": freqs
                         }
-
                 return precomp
-
 
         def _sensor_graph_prep(self):
                 ch_names = self.rec_info["ch_names"]
-                chs = self._modality_params.channels.ch_names
+                chs = self.params["channels"]
                 indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
                 indices = tuple(indices)
 
                 ## initiating the filter
-                sos = butter_bandpass(self.freq_range[0], self.freq_range[1], self._sfreq,
-                                        order=self._modality_params.channels.order)
-                return indices, sos
+                sos = butter_bandpass(
+                                        self.params["frange"][0],
+                                        self.params["frange"][1],
+                                        self._sfreq,
+                                        order=5
+                                        )
+                precomp = {"indices": indices, "sos": sos}
+                return precomp
 
         def _source_graph_prep(self):
                 ## initiating the source space
@@ -812,7 +814,12 @@ class NFRealtime:
         @timed
         def _sensor_graph(self, data, indices, sos):
                 data_filt = sosfiltfilt(sos, data)
-                graph_matrix = log_degree_barrier(data_filt, **self._modality_params.graph)
+                graph_matrix = log_degree_barrier(
+                                                data_filt,
+                                                dist_type=self.params["dist_type"],
+                                                alpha=self.params["alpha"],
+                                                beta=self.params["beta"]
+                                                )
                 avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean()
                 return avg_edge
         
