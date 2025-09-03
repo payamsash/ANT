@@ -5,6 +5,7 @@ import yaml
 
 import numpy as np
 from scipy import sparse
+from scipy.signal import butter
 from scipy.spatial.distance import pdist, squareform
 from scipy.signal import welch, periodogram, get_window
 from scipy.integrate import simpson
@@ -171,6 +172,12 @@ def compute_fft(sfreq, winsize, freq_range, freq_res=1):
 
         return fft_window, freq_band, freq_band_idxs, frequencies
 
+def butter_bandpass(l_freq, h_freq, sfreq, order):
+
+        nyq = 0.5 * sfreq
+        (low, high) = (l_freq / nyq, h_freq / nyq) 
+        sos = butter(order, [low, high], analog=False, btype='band', output='sos')
+        return sos
 
 def estimate_aperiodic_component(
                 raw_baseline,
@@ -342,9 +349,9 @@ def log_degree_barrier(
                 dist_type,
                 alpha,
                 beta,
-                step,
-                max_iter,
-                rtol,
+                step=0.5,
+                max_iter=10000,
+                rtol=1.0e-16,
                 w0=None
                 ):
         """
