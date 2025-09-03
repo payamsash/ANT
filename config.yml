@@ -1,48 +1,37 @@
 # Default parameters for neurofeedback
 
 NF_modality:
-  argmax_freq:
-  # Track the frequency at which the maximum activation occurs.
-    psd:
-      method: "welch" # Spectral estimation method "welch" or "multitaper"
-      fmin: 0 # The lower bound on frequencies of interest to estimate power spectrum (note this should be smaller than lower bound of desired frequency range)
-      fmax: 80 # The upper bound on frequencies of interest to estimate power spectrum (note this should be larger than upper bound of desired frequency range)
-      tmin: null # First time to include, in seconds.
-      tmax: null # Last times to include, in seconds.
-      remove_dc: True # If True, the mean is subtracted from each segment before computing its spectrum.
-      n_jobs: 1 # The number of jobs to run in parallel. If -1, it is set to the number of CPU cores.
-
-    psd_fitting:
-      peak_width_limits: [0.5, 12.0] # Limits on possible peak width, in Hz, as (lower_bound, upper_bound).
-      max_n_peaks: .inf # Maximum number of peaks to fit.
-      min_peak_height: 0.0 # Absolute threshold for detecting peaks. This threshold is defined in absolute units of the power spectrum (log power).
-      peak_threshold: 2.0 # Relative threshold for detecting peaks. This threshold is defined in relative units of the power spectrum (standard deviation).
-      aperiodic_mode: "fixed" # Which approach to take for fitting the aperiodic component. either "fixed" or "knee".
-
-    fft:
-      freq_res: 1 # Frequency resolution of the power spectrum.
-
-    curve_fit:
-      p0: [1, 10, 1] # Initial guess for the parameters
-      sigma: null # Determines the uncertainty in ydata
-      absolute_sigma: False # If True, sigma is used in an absolute sense and the estimated parameter covariance pcov reflects these absolute values.
-      check_finite: null # If True, check that the input arrays do not contain nans of infs, and raise a ValueError if they do.
-      bounds: [-.inf, .inf] # Lower and upper bounds on parameters. Defaults to no bounds.
-      method: null # Method to use for optimization -> {‘lm’, ‘trf’, ‘dogbox’}
-      jac: null # Function with signature jac(x, ...) which computes the Jacobian matrix of the model function with respect to parameters as a dense array_like structure.
-
   sensor_power: 
   # Track the spectral power at the desired frequency over the selected electrodes.
-    fft:
-      freq_res: 1 # Frequency resolution of the power spectrum.
-    
+    frange: [8, 13]
+    method: "welch" # other options are fft and multitaper
+    relative: False
 
   band_ratio: 
   # Track the power ratio between two frequency ranges over selected electrodes.
-    fft:
-      frange_1: [8, 13] # First frequecy range
-      frange_2: [4, 8] # Second frequecy range
-      
+    frange_1: [8, 13] # First frequecy range
+    frange_2: [4, 8] # Second frequecy range
+    method: "welch" # other options are fft and multitaper
+
+  argmax_freq:
+  # Track the frequency at which the maximum activation occurs.
+    frange: [8, 13]
+    method: "welch" # Spectral estimation method "welch" or "multitaper"
+    p0: [1, 10, 1] # Initial guess for the parameters
+
+  source_power:
+  # Track the activation in a desired brain label.
+    frange: [8, 13]
+    brain_label: "pericalcarine-lh"
+    atlas: "aparc" # The parcellation to use, e.g., 'aparc' or 'aparc.a2009s'.
+
+  sensor_connectivity:
+  # Track the connection strength between multiple channels in sensor space.
+    frange: [8, 13]
+    channels: [["C3", "C4"], ["F3", "F4"]] # desired channel names, should be a list of two lists.
+    method: "coh" # Connectivity measure(s) to compute. These can be ['corr', 'coh', 'mic', 'mim', 'plv', 'ciplv', 'pli', 'wpli', 'gc', 'gc_tr']. 
+    mode: "cwt_morlet" # Time-frequency decomposition method. Can be either: ‘multitaper’, or ‘cwt_morlet’. 
+    
 
   individual_peak_power:
   # Track the power around the frequency with maximum activation..  
@@ -78,55 +67,9 @@ NF_modality:
       tau: 2 # Delay (number of samples).
       emb_svd: 10 # Embedding dimension.
 
-  source_power:
-  # Track the activation in a desired brain label.
-    src:
-      bl: "pericalcarine-lh"
-      subject: "fsaverage" # The FreeSurfer subject name.
-      subjects_dir: null # The path to the directory containing the FreeSurfer subjects reconstructions. If None, defaults to the SUBJECTS_DIR environment variable.
-      atlas: "aparc" # The parcellation to use, e.g., 'aparc' or 'aparc.a2009s'.
-      snr: 1 # signal to noise ratio.
-      source: "fsaverage" # Either a path to a source space file or a loaded or generated SourceSpaces. Can also be 'fsaverage' to use the built-in fsaverage transformation.
-      trans: "fsaverage" # the path to the head<->MRI transform *-trans.fif file produced during coregistration. Can also be 'fsaverage' to use the built-in fsaverage transformation.
-      bem: "fsaverage" # Filename of the BEM. Can also be 'fsaverage' to use the built-in fsaverage transformation.
-      mindist: 0 # Minimum distance of sources from inner skull surface (in mm).
-      n_jobs: null # The number of jobs to run in parallel. None is a marker for ‘unset’ that will be interpreted as n_jobs=1 
-      noise_cov_method: "empirical"
-      loose: "auto" # Value that weights the source variances of the dipole components that are parallel (tangential) to the cortical surface.
-      depth: 0.8 # How to weight (or normalize) the forward using a depth prior.
-      fixed: "auto" # Use fixed source orientations normal to the cortical mantle. If True, the loose parameter must be "auto" or 0. If 'auto', the loose value is used.
-      use_cps: True # Whether to use cortical patch statistics to define normal orientations for surfaces (default True).
 
-    inv_modeling:
-      method: "dSPM" # Use minimum norm, dSPM (default), sLORETA, or eLORETA.
-      pick_ori: null # Options are None, normal or vector.
-      nave: 1 # Number of averages used to regularize the solution.
-      time_func: null # Linear function applied to sensor space time series.
-      buffer_size: null # If not None, the computation of the inverse and the combination of the current components is performed in segments of length buffer_size samples.
-      prepared: False # If True, do not call prepare_inverse_operator().
-      use_cps: True # Whether to use cortical patch statistics to define normal orientations for surfaces (default True).
 
-    fft:
-      winsize: 1 # Window’s size [secs]. Must be smaller than the buffer’s size.
-      freq_res: 1 # Frequency resolution of the power spectrum.
 
-  sensor_connectivity:
-  # Track the connection strength between multiple channels in sensor space.
-    channels:
-      ch_names: [["C3", "C4"], ["F3", "F4"]] # desired channel names, should be a list of two lists.
-      freq_res: 6 # number of frequencies within the specified frequency range.
-    
-    con:
-      method: "coh" # Connectivity measure(s) to compute. These can be ['corr', 'coh', 'mic', 'mim', 'plv', 'ciplv', 'pli', 'wpli', 'gc', 'gc_tr']. 
-      sm_times: 0 # Amount of time to consider for the temporal smoothing in seconds. If zero, no temporal smoothing is applied.
-      sm_freqs: 1 # Number of points for frequency smoothing. By default, 1 is used which is equivalent to no smoothing.
-      sm_kernel: "hanning" # Smoothing kernel type. Choose either ‘square’ or ‘hanning’.
-      padding: 0 # Amount of time to consider as padding at the beginning and end of each epoch in seconds. See Notes for more information.
-      mode: "cwt_morlet" # Time-frequency decomposition method. Can be either: ‘multitaper’, or ‘cwt_morlet’. 
-      mt_bandwidth: null # Product between the temporal window length (in seconds) and the full frequency bandwidth (in Hz). 
-      n_cycles: 5 # Number of cycles in the wavelet, either a fixed number or one per frequency. The number of cycles n_cycles and the frequencies of interest cwt_freqs define the temporal window length.
-      decim: 1 # To reduce memory usage, decimation factor after time-frequency decomposition. 
-      n_jobs: 1 # Number of connections to compute in parallel. Memory mapping must be activated. 
   
   source_connectivity:
   # Track the connection strength between two brain labels in source space.
