@@ -66,7 +66,7 @@ class NFRealtime:
         """
 
         VALID_SESSIONS = {"baseline", "main"}
-        VALID_ARTIFACT_METHODS = {False, "autoregressive", "noise_cov", "AJDC"}
+        VALID_ARTIFACT_METHODS = {False, "autoregressive", "noise_cov", "AJDC", "LMS"}
 
         def __init__(
                 self,
@@ -78,7 +78,11 @@ class NFRealtime:
                 mri: bool,
                 subject_fs_id: str = "fsaverage",
                 subjects_fs_dir: str = None,
-                artifact_rejection=False,
+                filtering=False,
+                l_freq=1,
+                h_freq=40,
+                artifact_correction=False,
+                ref_channel="Fp1",
                 save_raw: bool = True,
                 save_nf_signal: bool = True,
                 config_file=None,
@@ -116,10 +120,13 @@ class NFRealtime:
                 if not (subjects_fs_dir is None or isinstance(subject_fs_id, str) or Path(subjects_fs_dir).isdir()):
                         raise ValueError("`subject_fs_dir` must be None or path to a directory.")
 
-                if artifact_rejection not in self.VALID_ARTIFACT_METHODS:
+                if not isinstance(filtering, bool):
+                        raise ValueError("`filtering` must be bool.")
+                
+                if artifact_correction not in self.VALID_ARTIFACT_METHODS:
                         raise ValueError(
-                                f"`artifact_rejection` must be one of {self.VALID_ARTIFACT_METHODS}, "
-                                f"got {artifact_rejection!r}."
+                                f"`artifact_correction` must be one of {self.VALID_ARTIFACT_METHODS}, "
+                                f"got {artifact_correction!r}."
                         )
 
                 if not isinstance(save_raw, bool):
@@ -145,7 +152,11 @@ class NFRealtime:
                 self.mri = mri
                 self.subject_fs_id = subject_fs_id
                 self.subjects_fs_dir = subjects_fs_dir
-                self.artifact_rejection = artifact_rejection
+                self.filtering = filtering
+                self.l_freq = l_freq
+                self.h_freq = h_freq
+                self.artifact_correction = artifact_correction
+                self.ref_channel = ref_channel
                 self.save_raw = save_raw
                 self.save_nf_signal = save_nf_signal
                 self.config_file = config
@@ -299,59 +310,94 @@ class NFRealtime:
                 self.winsize = winsize
                 self.window_size_s = self.winsize * self.rec_info["sfreq"]
                 self.estimate_delays = estimate_delays
-                self.params = get_params(self.config_file, self.modality, self.modality_params)
                 self._sfreq = self.rec_info["sfreq"]
                 self.visualize_nf = visualize_nf
 
-                ## preparing the method
-                nf_mod_prep = getattr(self, f"_{modality}_prep", None)
-                nf_mod = getattr(self, f"_{modality}", None)
-                if not callable(nf_mod):
-                        raise NotImplementedError(f"{modality} modality not implemented yet.")
-                if "source" in self.modality:
-                        assert self.picks is None, "picks should be None for source methods." 
-                precomp = nf_mod_prep()
-                if estimate_delays:
-                        acq_delays, method_delays = [], []
+                if self.artifact_correction == "LMS":
+                        ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
+
+                ## preparing the methods
+                if isinstance(modality, str): 
+                        mods = [modality]
+                else:
+                        mods = modality
+                self._mods = mods
+
+                precomps, nf_mods = [], []
+                for modality in mods:
+                        self.params = get_params(self.config_file, modality, self.modality_params)
+                        nf_mod_prep = getattr(self, f"_{modality}_prep", None)
+                        nf_mod = getattr(self, f"_{modality}", None)
+                        if not callable(nf_mod):
+                                raise NotImplementedError(f"{modality} modality not implemented yet.")
+                        if "source" in self.modality:
+                                assert self.picks is None, "picks should be None for source methods." 
+                        precomp = nf_mod_prep()
+
+                        precomps.append(precomp)
+                        nf_mods.append(nf_mod)
                 
+                if estimate_delays:
+                        acq_delays = []
+                        method_delays = {mod: [] for mod in mods}
+                        
                 ## add vizualisation
                 if self.visualize_nf:
                         self.app = QtWidgets.QApplication([])
-                        self.win = pg.GraphicsLayoutWidget(show=True, title="Neurofeedback real-time plot")
-                        self.win.resize(800, 400)
-                        self.win.setWindowTitle("NF Data")
+                        self.plot_widget = pg.PlotWidget(title="Neurofeedback")
+                        self.plot_widget.showGrid(x=True, y=True)
+                        self.plot_widget.setLabel('bottom', 'Time', units='s')
+                        self.plot_widget.setLabel('left', 'Signal')
+                        self.plot_widget.setYRange(-1, len(mods)* 5 + 1)
+                        self.plot_widget.addLegend()
+                        self.plot_widget.resize(1000, 500)
+                        self.plot_widget.show()
+                        self.colors_list = ["#5DA5A4", "#9A7DFF", "#FFB085", "#8FBF87", "#D98BA3", "#E0C368"]
+                        self.scales_dict = {
+                                                "sensor_power": 1e-12,
+                                                "band_ratio": 2,
+                                                "entropy": 0.5,
+                                                } # implement the others as well
 
-                        self.plot = self.win.addPlot(title="NF Data")
-                        self.curve = self.plot.plot(pen='y')
-                        self.plot.setLabel('bottom', 'Time', units='samples')
-                        self.plot.setLabel('left', 'Value', units='a.u.')
-
-                        # rolling buffer
-                        self.plot_data = np.zeros(500)
+                        # self.plot = self.win.addPlot(title=modality)
+                        self.curve = self.plot_widget.plot(pen='y')
+                        self.time_axis = np.linspace(0, 10, int(self._sfreq)) # show for 10 seconds
+                        self.legend = None
                 
                 ## now the real part!
-                nf_data = []
+                nf_data = {mod: [] for mod in mods}
                 t_start = local_clock()
                 while local_clock() < t_start + self.duration:
+                        
                         tic = time.time()
+                        ## add filtering
+                        if self.filtering:
+                                self.stream.filter(l_freq=l_freq, h_freq=h_freq)
+
+                        ## get data
                         data = self.stream.get_data(self.winsize, picks=self.picks)[0] # n_chs * n_times
                         if estimate_delays:
                                 acq_delays.append(time.time() - tic)
-                        print(data.shape)
                         if data.shape[1] != self.window_size_s: continue
 
                         ## add artifact correction
+                        if self.artifact_correction:
+                                data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                                print(data.shape)
 
                         ## compute nf
-                        nf_data_, method_delay = nf_mod(data, **precomp)
-                        print(nf_data_)
-                        nf_data.append(nf_data_)
-                        if estimate_delays:
-                                method_delays.append(method_delay)
+                        for idx, mod in enumerate(mods):
+                                nf_data_, method_delay = nf_mods[idx](data, **precomps[idx])
+                                print(nf_data_)
+                                nf_data[mod].append(nf_data_)
+                                if estimate_delays:
+                                        method_delays[mod].append(method_delay)
 
                         ## add vizualisation
                         if self.visualize_nf:
-                                self.update_nf_plot(nf_data_)
+                                last_vals = [nf_data["sensor_power"][-1], nf_data["band_ratio"][-1]]
+                                last_vals = [nf_data[key][-1] for key in mods]
+                                self.update_nf_plot(last_vals, labels=mods)
                                 self.app.processEvents()
                                 time.sleep(0.01)
 
@@ -385,10 +431,54 @@ class NFRealtime:
         
         ## --------------------------- General Methods --------------------------- ##
 
-        def update_nf_plot(self, new_val):
-                self.plot_data = np.roll(self.plot_data, -1)
-                self.plot_data[-1] = new_val
-                self.curve.setData(self.plot_data)
+        def update_nf_plot(self, new_vals, labels=None):
+                """
+                Update neurofeedback plot in real-time.
+
+                Parameters
+                ----------
+                new_vals : list or np.ndarray
+                        List of last values for each channel/modality.
+                        Example: [sensor_power_last, band_ratio_last]
+                labels : list of str, optional
+                        Labels for each modality (e.g., ["Sensor Power", "Band Ratio"])
+                """
+                
+                n_labels = len(new_vals)
+                new_vals = np.array(new_vals, dtype=float)
+
+                ## normalize
+                shifts = arr = np.arange(0, n_labels * 5, 5)
+                scales = [(0, self.scales_dict[k]) for k in self._mods]
+
+                norm_vals = []
+                for val, (min_val, max_val), shift in zip(new_vals, scales, shifts):
+                        norm = (val - min_val) / (max_val - min_val) + shift
+                        norm_vals.append(norm)
+                norm_vals = np.array(norm_vals)
+                
+                # Initialize plot_data and curves on first call
+                if not hasattr(self, "plot_data"):
+                        self.plot_data = np.zeros(shape=(n_labels, len(self.time_axis)))
+                        self.curves = []
+                        colors = [pg.mkPen(color=color, width=2) for color in self.colors_list]
+                        for lb in range(n_labels):
+                                pen = colors[lb % len(colors)]
+                                curve = self.plot_widget.plot(self.time_axis, self.plot_data[lb, :], pen=pen, name=labels[lb])
+                                self.curves.append(curve)
+                        
+                        if self.legend is None:
+                                self.legend = self.plot_widget.addLegend()
+                                self.legend.setLabelTextSize('14pt')
+
+                self.plot_data = np.roll(self.plot_data, -1, axis=1)
+                self.plot_data[:, -1] = norm_vals
+
+                # Update curves
+                for lb, curve in enumerate(self.curves):
+                        curve.setData(self.time_axis, self.plot_data[lb, :])
+
+
         
         def plot_rt(self, bufsize_view=0.2):
                 """
@@ -453,22 +543,17 @@ class NFRealtime:
                 for folder in ["neurofeedback", "delays", "main", "reports"]:
                         (self.subject_dir / folder).mkdir(parents=True, exist_ok=True)
 
-                if format == "npy":
-                        np.save(self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.npy", self.nf_data)
-                        np.save(self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.npy", self.acq_delays)
-                        np.save(self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.npy", self.method_delays)
-                
                 if format == "json":
                         if nf_data:
-                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.json"
+                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}_{self.modality}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.nf_data, file)
                         if acq_delay:
-                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.json"
+                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}_{self.modality}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.acq_delays, file)
                         if method_delay:
-                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.json"
+                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}_{self.modality}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.method_delays, file)                                
         
