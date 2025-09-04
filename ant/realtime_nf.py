@@ -1,25 +1,24 @@
 ## don't enter here without a good guide!
 
-import time
-from warnings import warn
-from pathlib import Path
-import json
-import uuid
-
 import datetime
+import json
+import time
+import uuid
+from pathlib import Path
+from warnings import warn
+
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import sosfiltfilt
 
-from mne_lsl.stream import StreamLSL as Stream
-from mne_lsl.player import PlayerLSL as Player
-from mne_lsl.stream_viewer import StreamViewer as Viewer
-from mne_lsl.lsl import local_clock
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtCore, QtWidgets
 
+import mne
 from mne import set_log_level, read_labels_from_annot, Report
 from mne.io import RawArray
 from mne.channels import get_builtin_montages, read_dig_captrak
-from mne.minimum_norm import apply_inverse_raw, write_inverse_operator, read_inverse_operator
+from mne.minimum_norm import apply_inverse_raw, read_inverse_operator, write_inverse_operator
 from mne_connectivity import spectral_connectivity_time
 from mne_features.univariate import (
                                         compute_app_entropy,
@@ -27,10 +26,14 @@ from mne_features.univariate import (
                                         compute_spect_entropy,
                                         compute_svd_entropy
                                         )
+
+from mne_lsl.lsl import local_clock
+from mne_lsl.player import PlayerLSL as Player
+from mne_lsl.stream import StreamLSL as Stream
+from mne_lsl.stream_viewer import StreamViewer as Viewer
+
 from ant.tools import *
 from ant.tools import _compute_inv_operator
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtCore, QtWidgets
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
