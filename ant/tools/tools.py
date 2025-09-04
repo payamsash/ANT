@@ -19,6 +19,7 @@ from mne import make_forward_solution, compute_raw_covariance
 from fooof import FOOOF
 from pyunlocbox import functions, solvers
 from functools import wraps
+from padasip.filters import FilterLMS
 
 def timed(func):
         @wraps(func)
@@ -466,3 +467,54 @@ def plot_glass_brain(bl1, bl2=None):
         fig_brain.tight_layout()
 
         return fig_brain
+
+
+def remove_blinks_lms(data, ref_ch_idx=0, n_taps=5, mu=0.01):
+        """
+        Remove blink artifacts from EEG using adaptive regression (LMS).
+        
+        Parameters
+        ----------
+        data : np.ndarray
+                Shape (n_channels, n_times), EEG data.
+        ref_ch : int
+                Index of reference channel (Fp1/Fp2/EOG).
+        n_taps : int
+                Number of filter taps (adaptive filter length).
+        mu : float
+                Learning rate (adaptation speed).
+        
+        Returns
+        -------
+        cleaned : np.ndarray
+                Shape (n_channels, n_times), cleaned EEG.
+        """
+        n_channels, n_times = data.shape
+        cleaned = data.copy()
+        ref = data[ref_ch_idx, :]
+        X = _make_tapped_delay(ref, n_taps=n_taps)
+        
+        # LMS adaptive filter per channel
+        filters = [FilterLMS(n=n_taps, mu=mu) for _ in range(n_channels)]
+
+        for ch in range(n_channels):
+                if ch == ref_ch_idx:
+                        continue
+                
+                target = data[ch, :]
+                y, e, w = filters[ch].run(target, X)
+                cleaned[ch, :] = e  # target - estimated blink contribution
+        
+        return cleaned
+
+def _make_tapped_delay(ref, n_taps):
+        """Build tapped-delay matrix from reference signal.
+        ref: shape (n_times,)
+        returns: shape (n_times, n_taps)
+        """
+        n_times = len(ref)
+        X = np.zeros((n_times, n_taps))
+        for k in range(n_taps):
+                X[k:, k] = ref[:n_times-k]
+        
+        return X
