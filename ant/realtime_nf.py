@@ -36,33 +36,101 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class NFRealtime:
         """
-        Generate a real-time neurofeedback signal on M/EEG recordings.
+        Initialize a subject session for EEG/Neurofeedback processing.
+
+        This constructor validates inputs, sets up session configuration, and prepares
+        logging. Optional preprocessing settings such as filtering and artifact correction
+        can be specified.
 
         Parameters
         ----------
         subject_id : str
-                Unique identifier of the subject.
+                Unique identifier for the subject. Must be a non-empty string.
         visit : int
-                Visit number (must be >= 1).
-        session : {"baseline", "main"}
-                Session name; must be either "baseline" or "main".
+                Visit number. Must be a positive integer (>=1).
+        session : str
+                Session type. Must be one of the valid sessions defined in `VALID_SESSIONS`.
         subjects_dir : str
                 Path to the directory containing subject data.
+        montage : str
+                EEG montage. Can be a built-in montage or a path to a `.bvct` file.
         mri : bool
-                Whether the subject has structural MRI data.
-        artifact_rejection : bool | {"autoregressive", "noise_cov", "AJDC"}, default=False
-                Method for artifact rejection. If False, no rejection is applied.
-        save_raw : bool, default=True
-                If True, streamed EEG/MEG data will be saved in the subject directory.
-        save_nf_signal : bool, default=True
-                If True, the computed neurofeedback signal will be saved.
-        verbose : bool | str | int | None, optional
-                Control verbosity of the logging output.
+                Whether MRI data is available for the subject.
+        subject_fs_id : str, optional
+                FreeSurfer subject ID. Default is 'fsaverage'.
+        subjects_fs_dir : str | None, optional
+                Path to FreeSurfer subjects directory. Default is None.
+        filtering : bool, optional
+                Whether to apply band-pass filtering. Default is False.
+        l_freq : float, optional
+                Low frequency cutoff for filtering. Default is 1 Hz.
+        h_freq : float, optional
+                High frequency cutoff for filtering. Default is 40 Hz.
+        artifact_correction : str | bool, optional
+                Method for artifact correction. Must be one of `VALID_ARTIFACT_METHODS`. Default is False.
+        ref_channel : str, optional
+                Reference channel for EEG. Default is 'Fp1'.
+        save_raw : bool, optional
+                Whether to save raw EEG data. Default is True.
+        save_nf_signal : bool, optional
+                Whether to save the neurofeedback signal. Default is True.
+        config_file : str | None, optional
+                Path to a YAML config file. Default is project default config.
+        verbose : int | None, optional
+                Logging verbosity level. Default is None.
 
         Raises
         ------
         ValueError
-                If inputs are invalid (e.g., session not recognized, directory missing).
+                If any of the input parameters fail validation checks.
+
+        Attributes
+        ----------
+        subject_id : str
+                Stored subject ID.
+        visit : int
+                Stored visit number.
+        session : str
+                Stored session type.
+        subjects_dir : str
+                Stored path to subjects directory.
+        montage : str
+                Stored EEG montage.
+        mri : bool
+                MRI availability flag.
+        subject_fs_id : str
+                FreeSurfer subject ID.
+        subjects_fs_dir : str | None
+                FreeSurfer subjects directory path.
+        filtering : bool
+                Band-pass filtering flag.
+        l_freq : float
+                Low frequency cutoff.
+        h_freq : float
+                High frequency cutoff.
+        artifact_correction : str | bool
+                Artifact correction method.
+        ref_channel : str
+                Reference channel.
+        save_raw : bool
+                Save raw EEG flag.
+        save_nf_signal : bool
+                Save neurofeedback signal flag.
+        config_file : str
+                Path to the config file used.
+        verbose : int | None
+                Logging verbosity level.
+
+        Examples
+        --------
+        >>> session = NFRealtime(
+        ...     subject_id="sub01",
+        ...     visit=1,
+        ...     session="baseline",
+        ...     subjects_dir="/data/subjects",
+        ...     montage="standard_1020",
+        ...     mri=True
+        ... )
         """
 
         VALID_SESSIONS = {"baseline", "main"}
@@ -177,15 +245,67 @@ class NFRealtime:
                                 timeout=2
                                 ):
                 """
-                Connect to the LSL stream.
+                Connect to a Lab Streaming Layer (LSL) stream for EEG data acquisition.
+
+                This method sets up a live or mock LSL stream depending on the parameters.
+                It handles stream creation, montage assignment, and metadata initialization.
+                Any existing stream is disconnected before a new connection. For mock streams,
+                a pre-recorded EEG file can be streamed as if it were live data.
 
                 Parameters
                 ----------
-                connection_params : dict
-                        Ms before and after peak to cut out. If float the cut is symmetric.
-                mock_lsl : bool
-                        If True a saved recording will be streamed.
+                chunk_size : int, optional
+                        Number of samples per chunk for streaming. Default is 10.
+                mock_lsl : bool, optional
+                        If True, a pre-recorded EEG file will be streamed instead of connecting to a live LSL stream.
+                        Default is False.
+                fname : str | Path | None, optional
+                        Path to the EEG file used for mock streaming. If None, a sample dataset will be used.
+                        Default is None.
+                n_repeat : int | float, optional
+                        Number of times to repeat the mock recording. Default is np.inf.
+                bufsize_baseline : int, optional
+                        Buffer size to use for 'baseline' sessions. Default is 4.
+                bufsize_main : int, optional
+                        Buffer size to use for 'main' sessions. Default is 3.
+                acquisition_delay : float, optional
+                        Delay in seconds between consecutive LSL acquisition attempts. Default is 0.001.
+                timeout : float, optional
+                        Maximum time in seconds to wait for LSL stream connection. Default is 2.
+
+                Raises
+                ------
+                FileNotFoundError
+                        If `mock_lsl` is True and the specified `fname` does not exist.
+                ConnectionError
+                        If the LSL stream cannot be connected within the timeout period.
+
+                Attributes
+                ----------
+                stream : Stream
+                        The connected LSL stream object.
+                sfreq : float
+                        Sampling frequency of the connected stream.
+                rec_info : dict
+                        Metadata/info dictionary from the connected stream.
+                bufsize : int
+                        Buffer size used for the stream, based on session type.
+                source_id : str
+                        Unique identifier for the LSL stream.
+                subject_dir : Path
+                        Directory created for the current subject.
+
+                Notes
+                -----
+                - Previous streams are disconnected automatically before a new connection.
+                - For mock streams, a `Player` object is automatically started.
+                - Callable attributes of the stream that are not private are copied to `self`.
+
+                Examples
+                --------
+                >>> session.connect_to_lsl(chunk_size=20, mock_lsl=True)
                 """
+
                 self.subject_dir = Path(self.subjects_dir) / self.subject_id
                 self.subject_dir.mkdir(parents=True, exist_ok=True)
                 
@@ -242,15 +362,36 @@ class NFRealtime:
 
         def record_baseline(self, baseline_duration, winsize=3):
                 """
-                Start baseline recording to extract useful features.
+                Record a baseline EEG segment to extract features for neurofeedback.
+
+                The method continuously streams data from the LSL connection for the 
+                specified baseline duration. Data is collected in windows of size `winsize`
+                and stored as a Raw object. The raw baseline is saved to disk, and the 
+                inverse operator is computed for the session.
 
                 Parameters
                 ----------
                 baseline_duration : float
-                        Desired duration of the baseline recording.
-                winsize : float
-                        Size of the window of data to view. The window will view the last winsize * sfreq samples (ceiled) from the buffer.
-                        If None, the entire buffer is returned.
+                        Desired duration of the baseline recording in seconds.
+                winsize : float, optional
+                        Size of the data window to fetch from the buffer in seconds. The method
+                        will fetch the last `winsize * sfreq` samples from the buffer. If None,
+                        the entire buffer is returned. Default is 3.
+
+                Returns
+                -------
+                None
+
+                Notes
+                -----
+                - The baseline data is saved under `subject_dir/baseline/visit_{visit}-raw.fif`.
+                - After recording, `self.raw_baseline` holds the MNE Raw object for the baseline.
+                - The inverse operator is computed after baseline recording and stored internally.
+                - The LSL stream remains connected after this method completes.
+
+                Examples
+                --------
+                >>> session.record_baseline(baseline_duration=60, winsize=5)
                 """
                 
                 self.baseline_duration = baseline_duration
@@ -271,7 +412,6 @@ class NFRealtime:
                 self.raw_baseline = raw_baseline
                 (self.subject_dir / "inv").mkdir(parents=True, exist_ok=True)
                 self.compute_inv_operator()
-                # self.stream.disconnect()
 
         def record_main(
                         self,
@@ -284,23 +424,81 @@ class NFRealtime:
                         visualize_nf=True
                         ):
                 """
-                Start recording to extract neural features.
+                Record EEG data and extract neural features for neurofeedback.
+
+                This method streams data from the LSL connection for the specified duration, 
+                applies the selected neural feature extraction modality, and optionally visualizes 
+                the neurofeedback signal in real-time. Supports multiple modalities and 
+                optional artifact correction.
 
                 Parameters
                 ----------
                 duration : float
-                        Desired duration of the main recording.
-                modality : str
-                        The method to extract the neural feature used for neurofeedback (see notes).
-                picks : str | list | None
-                        Channel names to pick, if None, all will be selected.
+                        Desired duration of the main recording in seconds.
+                modality : str, optional
+                        Method used to extract the neural feature for neurofeedback. Can also be a list 
+                        of modalities. Default is 'sensor_power'.
+                picks : str | list | None, optional
+                        Channel names to include in the analysis. If None, all channels are selected.
+                        Default is None.
+                winsize : float, optional
+                        Window size in seconds for fetching data from the buffer. The method will
+                        fetch the last `winsize * sfreq` samples. If None, the entire buffer is returned.
+                        Default is 1.
+                estimate_delays : bool, optional
+                        If True, acquisition and method delays will be estimated and stored. Default is False.
+                modality_params : dict | None, optional
+                        Dictionary of parameters to override default modality settings. If None, parameters
+                        from the config file are used. Default is None.
+                visualize_nf : bool, optional
+                        If True, displays real-time neurofeedback visualization using pyqtgraph. Default is True.
+
+                Raises
+                ------
+                NotImplementedError
+                        If a requested modality is not implemented.
+                AssertionError
+                        If a source-based modality is used while `picks` is not None.
+
+                Attributes
+                ----------
+                duration : float
+                        Duration of the main recording.
+                modality : str | list
+                        Selected modality or list of modalities.
+                picks : list | None
+                        Channels selected for analysis.
                 winsize : float
-                        Size of the window of data to view. The window will view the last winsize * sfreq samples (ceiled) from the buffer.
-                        If None, the entire buffer is returned.
+                        Window size in seconds for fetching data from the buffer.
+                window_size_s : float
+                        Window size in samples (winsize * sfreq).
                 estimate_delays : bool
-                        if True, the acquisition and method delays will be saved.
-                modality_params : dict | None
-                        dictionary of parameters to substitude default parameters. If None parameters from config file will be used.
+                        Flag indicating whether delays are estimated.
+                _sfreq : float
+                        Sampling frequency of the stream.
+                visualize_nf : bool
+                        Flag for real-time neurofeedback visualization.
+                _mods : list
+                        List of modalities prepared for the session.
+                app : QtWidgets.QApplication
+                        PyQt application instance for visualization (if visualize_nf is True).
+                plot_widget : pg.PlotWidget
+                        Plot widget for real-time visualization.
+                colors_list : list
+                        List of colors used for plotting multiple modalities.
+                scales_dict : dict
+                        Scaling factors for different modalities.
+
+                Notes
+                -----
+                - Prepares modality-specific preprocessing methods (`_modality_prep`) before recording.
+                - Callable neural feature extraction methods (`_modality`) are applied in real-time.
+                - Real-time visualization uses a 10-second time window.
+                - For artifact correction using "LMS", the reference channel index is computed internally.
+
+                Examples
+                --------
+                >>> session.record_main(duration=120, modality="sensor_power", picks=["C3", "C4"], winsize=2)
                 """     
                 
                 self.duration = duration
@@ -413,10 +611,31 @@ class NFRealtime:
         
         @property
         def modality_params(self):
+                """
+                Get the currently set modality parameters.
+
+                Returns
+                -------
+                dict
+                        Dictionary containing the current modality parameters.
+                """
                 return self._modality_params
 
         @modality_params.setter
         def modality_params(self, params):
+                """
+                Set the modality parameters for neural feature extraction.
+
+                Parameters
+                ----------
+                params : dict | None
+                        Dictionary of modality-specific parameters. If None, an empty dictionary is used.
+
+                Raises
+                ------
+                ValueError
+                        If `params` is not a dictionary or None.
+                """
                 if params is not None and not isinstance(params, dict):
                         raise ValueError("Can only be a dictionary.")
                 else:
@@ -424,24 +643,47 @@ class NFRealtime:
 
         def get_default_params(self):
                 """
-                Return the default parameters in the .yml file.
+                Return the default parameters from the configuration YAML file.
 
-                """     
+                Returns
+                -------
+                dict
+                        Default parameters for all neural feature modalities.
+                """
+
                 return self._default_params
         
         ## --------------------------- General Methods --------------------------- ##
 
         def update_nf_plot(self, new_vals, labels=None):
                 """
-                Update neurofeedback plot in real-time.
+                Update the neurofeedback plot in real-time.
+
+                This method updates the visual representation of neural feature values for 
+                each modality or channel. Normalization and vertical offsets are applied 
+                to allow multiple modalities to be plotted simultaneously.
 
                 Parameters
                 ----------
-                new_vals : list or np.ndarray
-                        List of last values for each channel/modality.
-                        Example: [sensor_power_last, band_ratio_last]
+                new_vals : list | np.ndarray
+                        List or array of the latest neural feature values for each modality.
+                        Example: [sensor_power_last, band_ratio_last].
                 labels : list of str, optional
-                        Labels for each modality (e.g., ["Sensor Power", "Band Ratio"])
+                        Labels for each modality to display in the plot legend.
+                        Example: ["Sensor Power", "Band Ratio"].
+
+                Notes
+                -----
+                - The first call initializes the plot and legend.
+                - Subsequent calls update the plot data in a rolling window fashion.
+                - The y-axis values are normalized based on modality-specific scaling factors
+                stored in `self.scales_dict`.
+                - The time axis is defined by `self.time_axis` and the number of curves by
+                the number of modalities in `new_vals`.
+
+                Examples
+                --------
+                >>> session.update_nf_plot([0.3, 0.7], labels=["Sensor Power", "Band Ratio"])
                 """
                 
                 n_labels = len(new_vals)
@@ -482,21 +724,46 @@ class NFRealtime:
         
         def plot_rt(self, bufsize_view=0.2):
                 """
-                Visualize the signals coming from the LSL stream.
-        
+                Visualize EEG signals in real-time from the LSL stream.
+
                 Parameters
                 ----------
-                bufsize_view : int | float
-                        Buffer/window size of the attached StreamReceiver.
+                bufsize_view : float, optional
+                        Buffer/window size in seconds for the StreamReceiver display.
+                        Default is 0.2 s.
+
+                Notes
+                -----
+                - Uses `Viewer` to create a real-time visualization of the EEG stream.
+                - The buffer size controls how much of the recent signal is visible.
+
+                Examples
+                --------
+                >>> session.plot_rt(bufsize_view=0.5)
                 """  
                 Viewer(stream_name=self.stream.name).start(bufsize=bufsize_view)
                 self.bufsize_view = bufsize_view
         
         def plot_delays(self):
                 """
-                Plot the histogram of the acqusition/method delays
+                Plot histograms of acquisition and method delays in neural feature computation.
 
-                """  
+                Returns
+                -------
+                matplotlib.figure.Figure
+                        Figure containing two subplots: acquisition delays and method delays.
+
+                Notes
+                -----
+                - Delays are converted to milliseconds.
+                - Histogram bins are adapted based on the selected modality ('sensor_power' or 'source_power').
+                - Axes limits are adjusted to reflect typical delay ranges for each modality.
+
+                Examples
+                --------
+                >>> fig = session.plot_delays()
+                >>> fig.show()
+                """ 
                 acq_delays_ms = np.array(self.acq_delays) * 1e3 # ms
                 method_delays_ms = np.array(self.method_delays) * 1e3 # ms
                 colors = ['#1f77b4', '#d62728']
@@ -523,11 +790,23 @@ class NFRealtime:
                         axs[1].set_xlim([100, 300])
                 
                 return fig_delays
-
-        def get_methods_list(self):
-                return list(self._default_params.NF_modality.keys())
         
         def compute_inv_operator(self):
+                """
+                Compute and save the inverse operator for source localization.
+
+                The method computes the MNE inverse operator from the baseline recording
+                and FreeSurfer subject data, then saves it to the subject's directory.
+
+                Notes
+                -----
+                - The inverse operator is stored in `self.inv`.
+                - The operator is saved under `subject_dir/inv/visit_{visit}-inv.fif`.
+
+                Examples
+                --------
+                >>> session.compute_inv_operator()
+                """
                 inv = _compute_inv_operator(self.raw_baseline,
                                                 subject_fs_id=self.subject_fs_id,
                                                 subjects_fs_dir=self.subjects_fs_dir)
@@ -538,75 +817,131 @@ class NFRealtime:
                                         overwrite=True
                                         )
 
-        def save(self, nf_data=True, acq_delay=True, method_delay=True, format="json"):
+        def save(self, nf_data=True, acq_delay=True, method_delay=True, raw_data=False, format="json"):
+                """
+                Save neurofeedback session data to disk.
+
+                This method disconnects the LSL stream and saves neurofeedback data,
+                acquisition delays, method delays, and optionally raw data. Currently,
+                saving raw data is not implemented.
+
+                Parameters
+                ----------
+                nf_data : bool, optional
+                        If True, save the neurofeedback data. Default is True.
+                acq_delay : bool, optional
+                        If True, save acquisition delay data. Default is True.
+                method_delay : bool, optional
+                        If True, save method delay data. Default is True.
+                raw_data : bool, optional
+                        If True, save raw EEG data. Not implemented yet. Default is False.
+                format : str, optional
+                        File format to save the data. Currently only 'json' is supported. Default is 'json'.
+
+                Raises
+                ------
+                NotImplementedError
+                        If `raw_data=True`, as saving raw EEG data is not implemented.
+
+                Notes
+                -----
+                - Creates directories `neurofeedback`, `delays`, `main`, and `reports` under the subject folder.
+                - JSON files are named using the subject ID and visit number.
+
+                Examples
+                --------
+                >>> session.save(nf_data=True, acq_delay=False, raw_data=False)
+                """
                 self.stream.disconnect()
                 for folder in ["neurofeedback", "delays", "main", "reports"]:
                         (self.subject_dir / folder).mkdir(parents=True, exist_ok=True)
 
                 if format == "json":
                         if nf_data:
-                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}_{self.modality}.json"
+                                fname = self.subject_dir / "neurofeedback" / f"nf_data_visit_{self.visit}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.nf_data, file)
                         if acq_delay:
-                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}_{self.modality}.json"
+                                fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.acq_delays, file)
                         if method_delay:
-                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}_{self.modality}.json"
+                                fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.json"
                                 with open(fname, "w") as file:
-                                        json.dump(self.method_delays, file)                                
+                                        json.dump(self.method_delays, file)       
+                if raw_data:
+                        raise NotImplementedError("saving raw_data isn't implemented yet")
         
         def create_report(self, overwrite=True):
                 """
-                Create a report in HTML format for the subject.
-                
+                Create an HTML report summarizing the neurofeedback session.
+
+                The report includes baseline recordings, EEG sensor visualizations,
+                and brain label plots depending on the modality used.
+
                 Parameters
                 ----------
-                report_path : path-like | None
-                        Directory to save the report.
-                overwrite : bool
-                        If True, overwrite the destination file if it exists.
-                """  
+                overwrite : bool, optional
+                        If True, overwrite an existing report file with the same name. Default is True.
+
+                Notes
+                -----
+                - Baseline raw data is included in the report without PSD or butterfly plots.
+                - Sensor plots include both topographic and 3D views.
+                - Brain label figures are added for source-based modalities using `plot_glass_brain`.
+                - The report is saved under `subject_dir/reports` with a filename including
+                subject ID, visit, and modality.
+
+                Examples
+                --------
+                >>> session.create_report(overwrite=True)
+                """
                 report = Report(title=f"Neurofeedback Session with {self.modality} modality")
                 report.add_raw(self.raw_baseline, title="Baseline recording", psd=False, butterfly=False)
 
-                methods_list = list(self._default_params.NF_modality.keys())
-                if self.modality in methods_list[:5]:
-                        if self.picks is not None:
-                                self.rec_info["bads"].extend(self.picks)
-                        else:
-                                self.rec_info["bads"].extend(self.rec_info["ch_names"])
+                for mod in self.modality:
+                        if not "source" in mod:
+                                if self.picks is not None:
+                                        self.rec_info["bads"].extend(self.picks)
+                                else:
+                                        self.rec_info["bads"].extend(self.rec_info["ch_names"])
 
-                        fig_sensors = plt.figure(figsize=(10, 5))
-                        ax1 = fig_sensors.add_subplot(121)
-                        ax2 = fig_sensors.add_subplot(122, projection='3d')
-                        mne.viz.plot_sensors(info=self.rec_info, kind="topomap", axes=ax1, show=False)
-                        mne.viz.plot_sensors(info=self.rec_info, kind="3d", axes=ax2, show=False)
-                        ax2.axis("off")
-                        self.rec_info["bads"] = []
-                        report.add_figure(fig=fig_sensors, title="Sensors")
+                                fig_sensors = plt.figure(figsize=(10, 5))
+                                ax1 = fig_sensors.add_subplot(121)
+                                ax2 = fig_sensors.add_subplot(122, projection='3d')
+                                mne.viz.plot_sensors(info=self.rec_info, kind="topomap", axes=ax1, show=False)
+                                mne.viz.plot_sensors(info=self.rec_info, kind="3d", axes=ax2, show=False)
+                                ax2.axis("off")
+                                self.rec_info["bads"] = []
+                                report.add_figure(fig=fig_sensors, title="Sensors")
+                        else :
+                                if mod in ["source_connectvity", "source_graph"]
+                                        figure_brain = plot_glass_brain(bl1=self.params["brain_label"], bl2=None)
+                                else:
+                                        figure_brain = plot_glass_brain(bl1=self.params["brain_label_1"],
+                                                                        bl2=self.params["brain_label_2"])
+                                        
+                                report.add_figure(fig=figure_brain, title=f"selected brain labels")
+                
 
-                if self.modality == "source_power":
-                        figure_brain = plot_glass_brain(bl1=self.params.src.bl, bl2=None)
-                        report.add_figure(fig=figure_brain, title=f"selected brain labels")
-                if self.modality in methods_list[6:]:
-                        figure_brain = plot_glass_brain(bl1=self.params.src.bl_1,
-                                                        bl2=self.params.src.bl_2)
-                        report.add_figure(fig=figure_brain, title=f"selected brain labels")
-                
-                fig_delays = self.plot_delays()
-                report.add_figure(fig=fig_delays, title=f"estimated delays for method {self.modality}")
-                
-                if report_path is None:
-                        report_path = Path.cwd().parent.parent / "reports" 
-                        if not report_path.exists(): report_path.mkdir()
-                report_path = report_path / f"nf_report_subject_{self.subject_id}_modality_{self.modality}.html"
-                report.save(report_path, overwrite=overwrite)
+                report_fname = f"subject_{self.subject_id}_visit_{self.visit}_modality_{self.modality}.html"
+                report.save(self.subject_dir / "reports" / report_fname, overwrite=overwrite)
 
         ## --------------------------- Neural Feature Extraction Methods (preparation) --------------------------- ##
 
         def _sensor_power_prep(self):
+                """
+                Prepare parameters for the 'sensor_power' neural feature modality.
+
+                Returns
+                -------
+                dict
+                        Dictionary containing precomputed parameters for the modality:
+                        - sfreq : float, sampling frequency
+                        - frange : list or tuple, frequency range to compute power
+                        - method : str, method for power computation
+                        - relative : bool, whether to compute relative power
+                """
                 precomp = dict(
                                 sfreq=self.rec_info["sfreq"],
                                 frange=self.params["frange"],
@@ -617,7 +952,24 @@ class NFRealtime:
 
 
         def _argmax_freq_prep(self):
-                
+                """
+                Prepare parameters for the 'argmax_freq' modality by extracting aperiodic components.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - fft_window : array, FFT windows
+                        - freq_band : array, frequency band
+                        - freq_band_idxs : array, indices of frequencies
+                        - ap_model : array, estimated aperiodic component
+                        - gaussian : callable, function to model Gaussian peaks
+
+                Raises
+                ------
+                AssertionError
+                        If `raw_baseline` has not been recorded prior to this step.
+                """
                 assert hasattr(self, "raw_baseline"), "Baseline recording should be done prior to this step."
                 ## extracting the aperiodic components from the baseline recording
                 ap_params, _ = estimate_aperiodic_component(
@@ -646,6 +998,18 @@ class NFRealtime:
                 return precomp
 
         def _band_ratio_prep(self):
+                """
+                Prepare parameters for the 'band_ratio' neural feature modality.
+
+                Returns
+                -------
+                dict
+                        Dictionary containing precomputed parameters for the modality:
+                        - sfreq : float, sampling frequency
+                        - frange_1 : list or tuple, frequency range for numerator band
+                        - frange_2 : list or tuple, frequency range for denominator band
+                        - method : str, method for computing power in each band
+                """
                 precomp = dict(
                                 sfreq=self.rec_info["sfreq"],
                                 frange_1=self.params["frange_1"],
@@ -655,7 +1019,25 @@ class NFRealtime:
                 return precomp
 
         def _individual_peak_power_prep(self):
-                ## extracting the periodic components from the baseline recording
+                """
+                Prepare parameters for the 'individual_peak_power' modality.
+
+                Computes the individual peak frequency from baseline data and FFT indices
+                for power extraction around the peak.
+
+                Returns
+                -------
+                dict
+                        Dictionary containing:
+                        - fft_window : array, FFT windows
+                        - individual_freq_band_idxs : array, indices around the identified peak frequency
+
+                Notes
+                -----
+                - If multiple peaks are found in the selected frequency range, the center
+                frequency is set to the middle of the range and a warning is issued.
+                - Requires baseline recording to be done prior to calling this method.
+                """
                 _, peak_params_ = estimate_aperiodic_component(
                                                                 raw_baseline=self.raw_baseline,
                                                                 picks=self.picks,
@@ -686,6 +1068,15 @@ class NFRealtime:
                 return precomp
 
         def _entropy_prep(self):
+                """
+                Prepare parameters for the 'entropy' neural feature modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - sos : array, second-order sections of the Butterworth bandpass filter
+                """
                 sos = butter_bandpass(
                                         self.params["frange"][0],
                                         self.params["frange"][1],
@@ -696,6 +1087,23 @@ class NFRealtime:
                 return precomp
 
         def _source_power_prep(self):
+                """
+                Prepare parameters for the 'source_power' modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - fft_window : array, FFT windows
+                        - freq_band_idxs : array, indices of the selected frequency band
+                        - brain_label : instance of mne.Label, the target brain label
+                        - inverse_operator : instance of mne.minimum_norm.InverseOperator, for source localization
+
+                Notes
+                -----
+                - Reads the inverse operator from the subject's visit folder.
+                - Requires the subject FreeSurfer ID and directory.
+                """
                 fft_window, _, freq_band_idxs, _ = compute_fft(
                                                                 sfreq=self._sfreq,
                                                                 winsize=self.winsize,
@@ -719,6 +1127,16 @@ class NFRealtime:
                 return precomp
 
         def _sensor_connectivity_prep(self):
+                """
+                Prepare parameters for the 'sensor_connectivity' modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - indices : tuple of arrays, channel index pairs for connectivity computation
+                        - freqs : array, frequencies to compute connectivity
+                """
                 ch_names = self.rec_info["ch_names"]
                 chs = self.params["channels"]
                 indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
@@ -732,6 +1150,22 @@ class NFRealtime:
                 return precomp
 
         def _source_connectivity_prep(self):
+                """
+                Prepare parameters for the 'source_connectivity' modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - merged_label : mne.Label, combination of left and right hemisphere labels
+                        - inverse_operator : mne.minimum_norm.InverseOperator, for source localization
+                        - freqs : array, frequencies to compute connectivity
+
+                Raises
+                ------
+                AssertionError
+                        If brain labels are not from the correct hemispheres ('lh' for left, 'rh' for right)
+                """
                 assert self.params["brain_label_1"][-2:] == "lh", "first brain label should be selected from left hemisphere."
                 assert self.params["brain_label_2"][-2:] == "rh", "second brain label should be selected from right hemisphere."
                 
@@ -756,6 +1190,16 @@ class NFRealtime:
                 return precomp
 
         def _sensor_graph_prep(self):
+                """
+                Prepare parameters for the 'sensor_graph' modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - indices : tuple of arrays, channel index pairs for graph computation
+                        - sos : array, second-order sections of Butterworth bandpass filter
+                """
                 ch_names = self.rec_info["ch_names"]
                 chs = self.params["channels"]
                 indices = [(np.array([ch_names.index(ch1), ch_names.index(ch2)])) for ch1, ch2 in zip(chs[0], chs[1])]
@@ -772,6 +1216,18 @@ class NFRealtime:
                 return precomp
 
         def _source_graph_prep(self):
+                """
+                Prepare parameters for the 'source_graph' neural feature modality.
+
+                Returns
+                -------
+                dict
+                        Precomputed parameters including:
+                        - bls : list of mne.Label, all labels from the atlas
+                        - bl_idxs : tuple of int, indices of selected brain labels for graph computation
+                        - inverse_operator : mne.minimum_norm.InverseOperator, for source localization
+                        - sos : array, second-order sections of Butterworth bandpass filter
+                """
                 ## initiating the source space
                 bls = read_labels_from_annot(
                                                 subject=self.subject_fs_id,
@@ -800,7 +1256,27 @@ class NFRealtime:
 
         @timed
         def _sensor_power(self, data, sfreq, frange, method, relative):
+                """
+                Compute sensor-level power in a given frequency band.
 
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                sfreq : float
+                        Sampling frequency.
+                frange : list or tuple
+                        Frequency range to compute power [fmin, fmax].
+                method : str
+                        Method for power computation: 'fft', 'periodogram', 'welch', or 'multitaper'.
+                relative : bool
+                        If True, return relative power within the frequency band.
+
+                Returns
+                -------
+                float
+                        Mean power across channels in the specified frequency band.
+                """
                 if method == "fft":
                         n_channels, n_samples = data.shape
                         n_fft = int(2 ** np.ceil(np.log2(n_samples)))
@@ -828,6 +1304,29 @@ class NFRealtime:
 
         @timed
         def _argmax_freq(self, data, fft_window, freq_band, freq_band_idxs, ap_model, gaussian):
+                """
+                Compute the individual peak frequency using FFT and a Gaussian fit.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                fft_window : np.ndarray
+                        Precomputed FFT window.
+                freq_band : np.ndarray
+                        Frequencies corresponding to FFT bins.
+                freq_band_idxs : np.ndarray
+                        Indices of the frequency band of interest.
+                ap_model : np.ndarray
+                        Estimated aperiodic (1/f) component to subtract.
+                gaussian : callable
+                        Gaussian function to fit the peak.
+
+                Returns
+                -------
+                float
+                        Estimated individual peak frequency. Returns 0 if Gaussian fit fails.
+                """
                 data = np.multiply(data, fft_window)
                 fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
                 total_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
@@ -842,6 +1341,27 @@ class NFRealtime:
         
         @timed
         def _band_ratio(self, data, sfreq, frange_1, frange_2, method):
+                """
+                Compute the ratio of band power between two frequency bands.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                sfreq : float
+                        Sampling frequency.
+                frange_1 : list or tuple
+                        Frequency range for numerator band [fmin, fmax].
+                frange_2 : list or tuple
+                        Frequency range for denominator band [fmin, fmax].
+                method : str
+                        Method for power computation: 'fft', 'periodogram', 'welch', or 'multitaper'.
+
+                Returns
+                -------
+                float
+                        Ratio of mean power in `frange_1` to mean power in `frange_2`.
+                """
                 if method == "fft":
                         n_channels, n_samples = data.shape
                         n_fft = int(2 ** np.ceil(np.log2(n_samples)))
@@ -870,6 +1390,23 @@ class NFRealtime:
 
         @timed
         def _individual_peak_power(self, data, fft_window, individual_freq_band_idxs):
+                """
+                Compute power around the individual peak frequency.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                fft_window : np.ndarray
+                        Precomputed FFT window to apply on the data.
+                individual_freq_band_idxs : np.ndarray
+                        Indices of the frequency band around the individual peak.
+
+                Returns
+                -------
+                float
+                        Mean power across channels in the selected individual frequency band.
+                """
                 data = np.multiply(data, fft_window)
                 fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
                 power = np.average(np.square(fftval[:, individual_freq_band_idxs]).T)
@@ -877,6 +1414,21 @@ class NFRealtime:
 
         @timed
         def _entropy(self, data, sos):
+                """
+                Compute entropy of EEG signals.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                sos : np.ndarray
+                        Second-order sections of the bandpass filter to apply.
+
+                Returns
+                -------
+                float
+                        Mean entropy value across channels.
+                """
                 data_filt = sosfiltfilt(sos, data)
                 match self.params["method"]:
                         case "AppEn":
@@ -891,6 +1443,27 @@ class NFRealtime:
 
         @timed
         def _source_power(self, data, fft_window, freq_band_idxs, brain_label, inverse_operator):
+                """
+                Compute source-level power for a specific brain label.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                fft_window : np.ndarray
+                        Precomputed FFT window.
+                freq_band_idxs : np.ndarray
+                        Indices of the frequency band of interest.
+                brain_label : mne.Label
+                        Label of the brain region to extract source activity from.
+                inverse_operator : mne.minimum_norm.InverseOperator
+                        Inverse operator for source reconstruction.
+
+                Returns
+                -------
+                float
+                        Mean power in the selected source region.
+                """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
                 
@@ -909,6 +1482,23 @@ class NFRealtime:
 
         @timed
         def _sensor_connectivity(self, data, indices, freqs):
+                """
+                Compute sensor-level connectivity between channel pairs.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                indices : tuple
+                        Pairs of channel indices for connectivity calculation.
+                freqs : np.ndarray
+                        Frequencies at which to compute connectivity.
+
+                Returns
+                -------
+                float
+                        Mean connectivity across selected channel pairs.
+                """
                 con = spectral_connectivity_time(
                                                 data=data[np.newaxis,:],
                                                 freqs=freqs,
@@ -927,6 +1517,25 @@ class NFRealtime:
 
         @timed
         def _source_connectivity(self, data, merged_label, inverse_operator, freqs):
+                """
+                Compute source-level connectivity between two brain regions.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                merged_label : mne.Label
+                        Merged label covering the two brain regions of interest.
+                inverse_operator : mne.minimum_norm.InverseOperator
+                        Inverse operator for source reconstruction.
+                freqs : np.ndarray
+                        Frequencies at which to compute connectivity.
+
+                Returns
+                -------
+                float
+                        Connectivity value between the two source regions.
+                """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
                 stcs = apply_inverse_raw(
@@ -957,6 +1566,23 @@ class NFRealtime:
 
         @timed
         def _sensor_graph(self, data, indices, sos):
+                """
+                Compute graph-theoretical metrics from sensor-level EEG data.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                indices : tuple
+                        Pairs of channel indices to compute graph edges.
+                sos : np.ndarray
+                        Second-order sections of Butterworth bandpass filter.
+
+                Returns
+                -------
+                float
+                        Average edge value of the computed graph across selected channel pairs.
+                """
                 data_filt = sosfiltfilt(sos, data)
                 graph_matrix = log_degree_barrier(
                                                 data_filt,
@@ -969,6 +1595,27 @@ class NFRealtime:
         
         @timed
         def _source_graph(self, data, bls, bl_idxs, inverse_operator, sos):
+                """
+                Compute graph-theoretical metrics from source-level EEG data.
+
+                Parameters
+                ----------
+                data : np.ndarray
+                        EEG data array (channels x samples).
+                bls : list of mne.Label
+                        Labels of brain regions used to extract time courses.
+                bl_idxs : tuple of int
+                        Indices of the brain labels to compute the graph edge between.
+                inverse_operator : mne.minimum_norm.InverseOperator
+                        Inverse operator for source reconstruction.
+                sos : np.ndarray
+                        Second-order sections of Butterworth bandpass filter.
+
+                Returns
+                -------
+                float
+                        Average edge value of the computed graph between the two selected brain labels.
+                """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
                 stcs = apply_inverse_raw(
