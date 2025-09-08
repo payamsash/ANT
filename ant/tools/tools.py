@@ -14,10 +14,14 @@ from pyunlocbox import functions, solvers
 from padasip.filters import FilterLMS
 
 from mne import make_forward_solution, compute_raw_covariance
+from mne.io import read_raw
+from mne.preprocessing import ICA
 from mne.datasets import fetch_fsaverage
 from mne.minimum_norm import make_inverse_operator
 from mne.time_frequency import psd_array_multitaper
 from mne.viz import create_3d_figure, get_brain_class
+
+from mne_icalabel import label_components
 
 def timed(func):
         """Decorator to measure execution time of a function.
@@ -638,3 +642,44 @@ def _make_tapped_delay(ref, n_taps):
                 X[k:, k] = ref[:n_times-k]
         
         return X
+
+def create_blink_template(raw, max_iter=800, method="infomax"):
+        """
+        Create a template for eye blink ICA component from raw EEG data.
+
+        Parameters
+        ----------
+        raw : mne.io.Raw
+                The raw EEG data.
+        max_iter : int, optional
+                Maximum number of iterations for the ICA fitting. Default is 800.
+        method : str, optional
+                ICA method to use. Default is "infomax".
+
+        Returns
+        -------
+        template_blink_comp : np.ndarray
+                The spatial topography of the ICA component corresponding to the blink
+                (shape: n_channels x 1). If no blink component is detected, returns None.
+        """
+        ica = ICA(n_components=0.95, max_iter=max_iter, method=method, fit_params=dict(extended=True))
+        
+        try:
+                ica.fit(raw)
+        except Exception:
+                ica = ICA(n_components=5, max_iter=max_iter, method=method, fit_params=dict(extended=True))
+                ica.fit(raw)
+
+        ic_dict = label_components(raw, ica, method="iclabel")
+        ic_labels = ic_dict["labels"]
+        ic_probs = ic_dict["y_pred_proba"]
+
+        # Find indices of components labeled as "eye blink"
+        eye_indices = [i for i, lbl in enumerate(ic_labels) if lbl == "eye blink"]
+
+        template_blink_comp = None
+        if eye_indices:
+                blink_idx = max(eye_indices, key=lambda i: ic_probs[i])
+                template_blink_comp = ica.get_components()[:, blink_idx]
+
+        return template_blink_comp
