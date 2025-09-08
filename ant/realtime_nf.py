@@ -399,7 +399,7 @@ class NFRealtime:
                 
                 self.baseline_duration = baseline_duration
                 #time.sleep(self.bufsize)
-                print("start")
+                print("Recording Initiated ...!")
                 data = [] 
                 t_start = local_clock()
                 while local_clock() < t_start + self.baseline_duration:
@@ -606,12 +606,10 @@ class NFRealtime:
                         ## add artifact correction
                         if self.artifact_correction:
                                 data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
-                                print(data.shape)
 
                         ## compute nf
                         for idx, mod in enumerate(mods):
                                 nf_data_, method_delay = nf_mods[idx](data, **precomps[idx])
-                                print(nf_data_)
                                 nf_data[mod].append(nf_data_)
                                 if estimate_delays:
                                         method_delays[mod].append(method_delay)
@@ -940,7 +938,7 @@ class NFRealtime:
                                 self.rec_info["bads"] = []
                                 report.add_figure(fig=fig_sensors, title="Sensors")
                         else :
-                                if mod in ["source_connectvity", "source_graph"]
+                                if mod in ["source_connectvity", "source_graph"]:
                                         figure_brain = plot_glass_brain(bl1=self.params["brain_label"], bl2=None)
                                 else:
                                         figure_brain = plot_glass_brain(bl1=self.params["brain_label_1"],
