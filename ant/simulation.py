@@ -29,34 +29,52 @@ def simulate_eeg_raw(
                         iir_filter=[0.2, -0.2, 0.04],
                         verbose=None
                     ):
-    """
-    Generate simulated source estimates and raw data by adding an artificial signal in a desired brain label.
-    
+    """Simulate EEG data with a sinusoidal source in a given brain label.
+
+    A forward solution is created for ``fsaverage`` and a sinusoidal source
+    is injected into the specified brain label. The simulated signal is then
+    projected to sensor space, optionally repeated with gaps, and saved as
+    an MNE Raw object.
+
     Parameters
     ----------
     brain_label : str
-            The new measurement date. If datetime object, it must be timezone-aware and in UTC.
-            A tuple of (seconds, microseconds) or float (alias for (meas_date, 0)) can also be passed and a datetime object will be automatically created.
-            If None, the time of executing code will be added.
+        Name (regexp) of the cortical label in which to simulate the source.
     frequency : float
-        frequency of simulated sine signal.
+        Frequency of the simulated sine wave (Hz).
     amplitude : float
-        amplitude of simulated sine signal.
+        Amplitude scaling factor of the simulated signal.
     duration : float
-        duration of the simulated signal.
-    gap_duration: float
-        interval between two consequent simulated signals
+        Duration of each simulated signal epoch in seconds.
+    gap_duration : float
+        Interval (in seconds) between consecutive signal epochs.
     n_repetition : int
-        number of repetition of the signal.
-    start : str
-        start time of the first simulated signal.
-    iir_filter : None | array_like
-        IIR filter coefficients (denominator)
+        Number of signal epochs to simulate.
+    start : float
+        Start time of the first simulated signal, in seconds.
+    iir_filter : array_like
+        IIR filter coefficients (denominator) used when adding noise.
     verbose : bool | str | int | None
         Control verbosity of the logging output.
 
-    Saves the simulated signal.
-    """  
+    Returns
+    -------
+    raw : instance of mne.io.Raw
+        The simulated raw EEG object.
+
+    Notes
+    -----
+    The simulated raw file is also written to disk in the ``data/simulated``
+    subdirectory, with a filename that includes the brain label, frequency,
+    and amplitude.
+
+    Examples
+    --------
+    >>> raw = simulate_eeg_raw('bankssts-lh', frequency=10, amplitude=1e-9,
+    ...                        duration=2., gap_duration=1., n_repetition=5,
+    ...                        start=0.)
+    >>> raw.plot()
+    """
 
     set_log_level(verbose=verbose)
     
@@ -120,3 +138,5 @@ def simulate_eeg_raw(
     sim_dir = data_dir / "simulated"
     os.makedirs(sim_dir, exist_ok=True)
     raw.save(fname=sim_dir / f"{brain_label}_{frequency}Hz_{amplitude}-raw.fif")
+
+    return raw
