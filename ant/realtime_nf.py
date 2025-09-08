@@ -416,6 +416,28 @@ class NFRealtime:
                 (self.subject_dir / "inv").mkdir(parents=True, exist_ok=True)
                 self.compute_inv_operator()
 
+        def get_blink_template(self, max_iter=800, method="infomax"):
+                """
+                Identify the eye blink component from the baseline EEG and store its template.
+
+                Parameters
+                ----------
+                max_iter : int, optional
+                        Maximum iterations for ICA fitting. Default is 800.
+                method : str, optional
+                        ICA method to use (e.g., 'infomax'). Default is 'infomax'.
+
+                Sets
+                ----
+                self.blink_template : np.ndarray
+                        The spatial topography of the ICA component corresponding to eye blinks.
+                """
+                self.blink_template = create_blink_template(
+                                                                self.raw_baseline,
+                                                                max_iter=max_iter,
+                                                                method=method
+                                                        )
+
         def record_main(
                         self,
                         duration,
