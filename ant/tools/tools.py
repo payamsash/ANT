@@ -1,27 +1,45 @@
 import os.path as op
 import time
 from copy import deepcopy
-import yaml
+from functools import wraps
 
+import yaml
 import numpy as np
 from scipy import sparse
-from scipy.signal import butter
-from scipy.spatial.distance import pdist, squareform
-from scipy.signal import welch, periodogram, get_window
 from scipy.integrate import simpson
-
-from mne.time_frequency import psd_array_multitaper
-from mne.minimum_norm import make_inverse_operator
-from mne.datasets import fetch_fsaverage
-from mne.viz import create_3d_figure, get_brain_class
-from mne import make_forward_solution, compute_raw_covariance
-
+from scipy.signal import butter, welch, periodogram, get_window
+from scipy.spatial.distance import pdist, squareform
 from fooof import FOOOF
 from pyunlocbox import functions, solvers
-from functools import wraps
 from padasip.filters import FilterLMS
 
+from mne import make_forward_solution, compute_raw_covariance
+from mne.datasets import fetch_fsaverage
+from mne.minimum_norm import make_inverse_operator
+from mne.time_frequency import psd_array_multitaper
+from mne.viz import create_3d_figure, get_brain_class
+
 def timed(func):
+        """Decorator to measure execution time of a function.
+
+        Parameters
+        ----------
+        func : callable
+                Function to be timed.
+
+        Returns
+        -------
+        wrapper : callable
+                Wrapped function that returns both the function's output
+                and its execution time in seconds.
+
+        Notes
+        -----
+        The decorated function returns a tuple ``(value, elapsed_time)``,
+        where ``value`` is the original return value of the function,
+        and ``elapsed_time`` is the runtime measured with
+        :func:`time.perf_counter`.
+        """
         @wraps(func)
         def wrapper(*args, **kwargs):
                 tic = time.perf_counter()
@@ -76,8 +94,38 @@ def get_canonical_freqs(frange_name):
                                 )
 
 def get_params(config_file, modality, modality_params):
-        """
-        Update the default params (if necessary) and return the params for NF modality.
+        """Load and update parameters for a given neurofeedback (NF) modality.
+
+        Parameters
+        ----------
+        config_file : str | path-like
+                Path to the YAML configuration file containing modality parameters.
+        modality : str
+                Name of the neurofeedback modality. Must be present in the
+                ``NF_modality`` section of the config file.
+        modality_params : dict | None
+                Optional dictionary with parameter overrides. The keys should be method
+                names (e.g., "fft", "welch"), and the values should be dictionaries
+                with parameter key-value pairs to update.
+
+        Returns
+        -------
+        params : dict
+                Dictionary containing updated parameters for the specified modality.
+
+        Raises
+        ------
+        ValueError
+                If the modality is not found in the config file.
+        ValueError
+                If a provided method in ``modality_params`` is not available
+                for the given modality.
+
+        Notes
+        -----
+        This function first loads default parameters for the requested modality
+        from the YAML file. If ``modality_params`` is provided, the defaults
+        are updated with the user-specified overrides.
         """
         with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
@@ -165,7 +213,30 @@ def compute_bandpower(
         return bp
 
 def compute_fft(sfreq, winsize, freq_range, freq_res=1):
-        
+        """Compute FFT-related quantities for spectral analysis.
+
+        Parameters
+        ----------
+        sfreq : float
+                Sampling frequency in Hz.
+        winsize : float
+                Window size in seconds.
+        freq_range : tuple of float
+                Frequency range of interest (low, high) in Hz.
+        freq_res : int, optional
+                Frequency resolution factor. Default is 1.
+
+        Returns
+        -------
+        fft_window : ndarray, shape (n_times,)
+                Hanning window of length ``winsize * sfreq`` in samples.
+        freq_band : ndarray, shape (n_freqs,)
+                Array of frequencies within the specified range.
+        freq_band_idxs : ndarray, shape (n_freqs,)
+                Indices of ``frequencies`` corresponding to ``freq_band``.
+        frequencies : ndarray, shape (n_freqs_total,)
+                Array of frequencies from the FFT across the full spectrum.
+        """
         winsize_in_samples = sfreq * winsize
         frequencies = np.fft.rfftfreq(n=int(winsize_in_samples)*freq_res, d=1/sfreq) 
         freq_band_idxs = np.where(np.logical_and(freq_range[0]<=frequencies, frequencies<=freq_range[1]))[0]
@@ -175,7 +246,25 @@ def compute_fft(sfreq, winsize, freq_range, freq_res=1):
         return fft_window, freq_band, freq_band_idxs, frequencies
 
 def butter_bandpass(l_freq, h_freq, sfreq, order):
+        """Design a Butterworth band-pass filter.
 
+        Parameters
+        ----------
+        l_freq : float
+                Low cut-off frequency in Hz.
+        h_freq : float
+                High cut-off frequency in Hz.
+        sfreq : float
+                Sampling frequency in Hz.
+        order : int
+                Order of the Butterworth filter.
+
+        Returns
+        -------
+        sos : ndarray
+                Second-order sections representation of the band-pass filter,
+                suitable for use with :func:`scipy.signal.sosfiltfilt`.
+        """
         nyq = 0.5 * sfreq
         (low, high) = (l_freq / nyq, h_freq / nyq) 
         sos = butter(order, [low, high], analog=False, btype='band', output='sos')
@@ -436,7 +525,27 @@ def log_degree_barrier(
 
 
 def plot_glass_brain(bl1, bl2=None):
+        """Plot one or two brain labels on an fsaverage glass brain.
 
+        Parameters
+        ----------
+        bl1 : str
+                Name of the first brain label (must exist in the 'aparc' parcellation).
+        bl2 : str | None, optional
+                Name of the second brain label. If None (default), only ``bl1`` is
+                displayed.
+
+        Returns
+        -------
+        fig_brain : matplotlib.figure.Figure
+                Figure containing the glass brain plots with highlighted labels.
+
+        Notes
+        -----
+        This function uses the ``fsaverage`` subject and the ``aparc`` parcellation
+        from FreeSurfer. The labels are displayed on a cortical surface rendering
+        using four different views (frontal, dorsal, frontal, lateral).
+        """
         brain_kwargs = dict(alpha=0.15, background="white", cortex="low_contrast", size=(800, 600))
         brain_labels = read_labels_from_annot(subject='fsaverage', parc='aparc')
         bl_names = [bl.name for bl in brain_labels]
@@ -508,9 +617,20 @@ def remove_blinks_lms(data, ref_ch_idx=0, n_taps=5, mu=0.01):
         return cleaned
 
 def _make_tapped_delay(ref, n_taps):
-        """Build tapped-delay matrix from reference signal.
-        ref: shape (n_times,)
-        returns: shape (n_times, n_taps)
+        """Build a tapped-delay matrix from a reference signal.
+
+        Parameters
+        ----------
+        ref : ndarray, shape (n_times,)
+                The reference signal.
+        n_taps : int
+                Number of delay taps to include.
+
+        Returns
+        -------
+        X : ndarray, shape (n_times, n_taps)
+                The tapped-delay matrix where each column contains the reference
+                signal delayed by a given number of samples.
         """
         n_times = len(ref)
         X = np.zeros((n_times, n_taps))
