@@ -1,0 +1,60 @@
+{
+    "signal_source": {
+        "file": {
+            "file_signal_path": "Signal.txt",
+            "duration": 120
+        },
+        "_generated": {
+            "duration": 120,
+            "osc_ip": "127.0.0.1",
+            "osc_port": 12346,
+            "osc_address": "/openbci/band-power/2"
+        },
+        "_lsl": {},
+        "_osc": {
+            "osc_ip": "127.0.0.1",
+            "osc_port": 12346,
+            "osc_address": "/openbci/band-power/2"
+        }
+    },
+    "min_power": 0.0,
+    "max_power": 50.0,
+    "sample_rate": 0.1,
+    "visual_preset": "VisualSunflower",
+    "is_full_screen": true,
+    "colors": {
+        "color1a": [58, 71, 102],
+        "color1b": [111, 136, 196],
+        "color1c": [91, 112, 212],
+        "color2": [12, 90, 110],
+        "color3a": [50, 32, 115],
+        "color3b": [88, 59, 196],
+        "color3c": [183, 173, 217],
+        "color4a": [115, 35, 99],
+        "color4b": [166, 83, 150],
+        "color4c": [214, 189, 217],
+        "color5": [115, 35, 36],
+        "color6": [115, 100, 35],
+        "color7": [35, 115, 92],
+        "universalColor": [],
+        "backgroundColor1": [242, 244, 247],
+        "backgroundColor2": [240, 246, 247],
+        "backgroundColor3": [246, 245, 250],
+        "backgroundColor4": [249, 240, 250],
+        "backgroundColor5": [250, 240, 240],
+        "backgroundColor6": [250, 249, 240],
+        "backgroundColor7": [240, 250, 248],
+        "paperColor": [252, 232, 225],
+        "universalBackgroundColor": []
+    },
+    "recording": {
+        "save_record_frames": false,
+        "record_frame_rate": 30,
+        "record_seconds": 30
+    },
+    "draw_signal_mode": {
+        "enabled": true,
+        "min_range_viz": 8,
+        "max_range_viz": 13
+    }
+}
