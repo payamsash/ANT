@@ -10,16 +10,20 @@ authors = [
     { name = "Payam S. Shabestari", email = "payam.sadeghi74@email.com" }
 ]
 dependencies = [
-    'mne>=1.4.2',
-    'numpy>=1.21,<3',
-    'pyqtgraph',
-    'qtpy',
-    'scipy',
-    'fooof',
-    'pyunlocbox',
-    'mne-lsl',
-    'mne-connectivity',
-    'mne-features'
+    "mne>=1.4.2",
+    "numpy>=1.21,<3",
+    "scipy",
+    "pyqtgraph",
+    "qtpy",
+    "fooof",
+    "pyunlocbox",
+    "mne-lsl",
+    "mne-connectivity",
+    "mne-features",
+    "pyyaml",
+    "padasip",
+    "mne-icalabel",
+    "PyQt6"
 ]
 license = {file = 'LICENSE'}
 maintainers = [
