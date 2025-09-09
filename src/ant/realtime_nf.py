@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from warnings import warn
+import threading
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -214,7 +215,6 @@ class NFRealtime:
                 else:
                         raise ValueError("`config_file` must be None or Path to a config file.")
                         
-                # --- Assign attributes ---
                 self.subject_id = subject_id
                 self.visit = visit
                 self.session = session
@@ -233,7 +233,6 @@ class NFRealtime:
                 self.config_file = config
                 self.verbose = verbose
 
-                # --- Setup logging ---
                 set_log_level(verbose)
 
         def connect_to_lsl(
@@ -446,7 +445,10 @@ class NFRealtime:
                         winsize=1,
                         estimate_delays=False,
                         modality_params=None,
-                        visualize_nf=True
+                        show_raw_signal=True,
+                        show_nf_signal=True,
+                        show_design_viz=True,
+                        design_viz="VisualRorschach"
                         ):
                 """
                 Record EEG data and extract neural features for neurofeedback.
@@ -475,8 +477,12 @@ class NFRealtime:
                 modality_params : dict | None, optional
                         Dictionary of parameters to override default modality settings. If None, parameters
                         from the config file are used. Default is None.
-                visualize_nf : bool, optional
-                        If True, displays real-time neurofeedback visualization using pyqtgraph. Default is True.
+                show_nf_signal : bool, optional
+                        If True, displays real-time neurofeedback signal using pyqtgraph. Default is True.
+                show_design_viz : bool, optional
+                        If True, displays real-time neurofeedback design visualization using py5. Default is True.
+                design_viz: str, optional
+                        Preset name to be visualized.
 
                 Raises
                 ------
@@ -501,12 +507,12 @@ class NFRealtime:
                         Flag indicating whether delays are estimated.
                 _sfreq : float
                         Sampling frequency of the stream.
-                visualize_nf : bool
+                show_nf_signal : bool
                         Flag for real-time neurofeedback visualization.
                 _mods : list
                         List of modalities prepared for the session.
                 app : QtWidgets.QApplication
-                        PyQt application instance for visualization (if visualize_nf is True).
+                        PyQt application instance for visualization (if show_nf_signal is True).
                 plot_widget : pg.PlotWidget
                         Plot widget for real-time visualization.
                 colors_list : list
@@ -534,7 +540,10 @@ class NFRealtime:
                 self.window_size_s = self.winsize * self.rec_info["sfreq"]
                 self.estimate_delays = estimate_delays
                 self._sfreq = self.rec_info["sfreq"]
-                self.visualize_nf = visualize_nf
+                self.show_raw_signal = show_raw_signal
+                self.show_nf_signal = show_nf_signal
+                self.show_design_viz = show_design_viz
+                self.design_viz = design_viz
 
                 if self.artifact_correction == "LMS":
                         ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
@@ -565,7 +574,7 @@ class NFRealtime:
                         method_delays = {mod: [] for mod in mods}
                         
                 ## add vizualisation
-                if self.visualize_nf:
+                if self.show_nf_signal:
                         self.app = QtWidgets.QApplication([])
                         self.plot_widget = pg.PlotWidget(title="Neurofeedback")
                         self.plot_widget.showGrid(x=True, y=True)
@@ -586,12 +595,16 @@ class NFRealtime:
                         self.curve = self.plot_widget.plot(pen='y')
                         self.time_axis = np.linspace(0, 10, int(self._sfreq)) # show for 10 seconds
                         self.legend = None
+
+                if self.show_raw_signal:
+                        self.plot_rt()
+                if show_design_viz:
+                        pass
                 
                 ## now the real part!
                 nf_data = {mod: [] for mod in mods}
                 t_start = local_clock()
                 while local_clock() < t_start + self.duration:
-                        
                         tic = time.time()
                         ## add filtering
                         if self.filtering:
@@ -614,13 +627,17 @@ class NFRealtime:
                                 if estimate_delays:
                                         method_delays[mod].append(method_delay)
 
-                        ## add vizualisation
-                        if self.visualize_nf:
-                                last_vals = [nf_data["sensor_power"][-1], nf_data["band_ratio"][-1]]
+                        ## QT signal vizualisation
+                        if self.show_nf_signal:
                                 last_vals = [nf_data[key][-1] for key in mods]
                                 self.update_nf_plot(last_vals, labels=mods)
                                 self.app.processEvents()
                                 time.sleep(0.01)
+
+                        ## Py5 visualization
+                        if self.show_design_viz:
+                                plot_design(nf_data_)
+
 
                 self.nf_data = nf_data
                 if estimate_delays:
@@ -745,7 +762,7 @@ class NFRealtime:
 
 
         
-        def plot_rt(self, bufsize_view=0.2):
+        def plot_rt(self):
                 """
                 Visualize EEG signals in real-time from the LSL stream.
 
@@ -762,10 +779,10 @@ class NFRealtime:
 
                 Examples
                 --------
-                >>> session.plot_rt(bufsize_view=0.5)
+                >>> session.plot_rt()
                 """  
-                Viewer(stream_name=self.stream.name).start(bufsize=bufsize_view)
-                self.bufsize_view = bufsize_view
+                viewer_thread = threading.Thread(target=lambda: StreamViewer(stream_name=self.stream.name), daemon=True)
+                viewer_thread.start()
         
         def plot_delays(self):
                 """
