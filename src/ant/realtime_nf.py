@@ -14,6 +14,7 @@ from scipy.signal import sosfiltfilt
 
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
+from PyQt6.QtGui import QFont
 
 import mne
 from mne import set_log_level, read_labels_from_annot, Report
@@ -113,7 +114,7 @@ class NFRealtime:
         h_freq : float
                 High frequency cutoff.
         artifact_correction : str | bool
-                Artifact correction method.
+                Artifact correction method ('orica' or 'lms').
         ref_channel : str
                 Reference channel.
         save_raw : bool
@@ -138,7 +139,7 @@ class NFRealtime:
         """
 
         VALID_SESSIONS = {"baseline", "main"}
-        VALID_ARTIFACT_METHODS = {False, "autoregressive", "noise_cov", "AJDC", "LMS"}
+        VALID_ARTIFACT_METHODS = {False, "orica", "lms"}
 
         def __init__(
                 self,
@@ -208,7 +209,7 @@ class NFRealtime:
                         raise ValueError("`save_nf_signal` must be True or False.")
 
                 if config_file is None:
-                        config = PROJECT_ROOT / "config.yml"
+                        config = PROJECT_ROOT.parent / "config_methods.yml"
                 elif config_file.endswith(".yml") and Path(config_file).is_file():
                         config = config_file
                 
@@ -545,8 +546,15 @@ class NFRealtime:
                 self.show_design_viz = show_design_viz
                 self.design_viz = design_viz
 
-                if self.artifact_correction == "LMS":
+                if self.artifact_correction == "lms":
                         ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
+                if self.artifact_correction == "orica":
+                        self.run_orica(
+                                        n_chs=len(self.rec_info["ch_names"]),
+                                        n_components=10,
+                                        onlineWhitening=True,
+                                        forgetfac=0.99
+                                        )
 
                 ## preparing the methods
                 if isinstance(modality, str): 
@@ -578,27 +586,27 @@ class NFRealtime:
                         self.app = QtWidgets.QApplication([])
                         self.plot_widget = pg.PlotWidget(title="Neurofeedback")
                         self.plot_widget.showGrid(x=True, y=True)
+                        self.plot_widget.addLegend()
                         self.plot_widget.setLabel('bottom', 'Time', units='s')
                         self.plot_widget.setLabel('left', 'Signal')
-                        self.plot_widget.setYRange(-1, len(mods)* 5 + 1)
-                        self.plot_widget.addLegend()
+                        self.plot_widget.setYRange(-1, len(mods) * 3 + 2)
                         self.plot_widget.resize(1000, 500)
                         self.plot_widget.show()
                         self.colors_list = ["#5DA5A4", "#9A7DFF", "#FFB085", "#8FBF87", "#D98BA3", "#E0C368"]
                         self.scales_dict = {
-                                                "sensor_power": 1e-12,
-                                                "band_ratio": 2,
-                                                "entropy": 0.5,
+                                                "sensor_power": 7e-13,
+                                                "band_ratio": 1.5,
+                                                "entropy": 0.35,
                                                 } # implement the others as well
 
-                        # self.plot = self.win.addPlot(title=modality)
+                        self.legend = None
                         self.curve = self.plot_widget.plot(pen='y')
                         self.time_axis = np.linspace(0, 10, int(self._sfreq)) # show for 10 seconds
-                        self.legend = None
+                        
 
                 if self.show_raw_signal:
                         self.plot_rt()
-                if show_design_viz:
+                if self.show_design_viz:
                         pass
                 
                 ## now the real part!
@@ -617,8 +625,19 @@ class NFRealtime:
                         if data.shape[1] != self.window_size_s: continue
 
                         ## add artifact correction
-                        if self.artifact_correction:
+                        if self.artifact_correction == "lms":
                                 data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                        
+                        if self.artifact_correction == "orica":
+                                sources = self.orica.transform(data)
+                                blink_score = np.abs(np.dot(
+                                                        sources.T, self.blink_template) /
+                                                        (np.linalg.norm(sources, axis=1) * \
+                                                        np.linalg.norm(self.blink_template) + 1e-12))
+                                blink_idx = np.argmax(blink_score)
+                                if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
+                                        sources[blink_idx, :] = 0
+                                data = self.orica.inverse_transform(sources)
 
                         ## compute nf
                         for idx, mod in enumerate(mods):
@@ -637,7 +656,6 @@ class NFRealtime:
                         ## Py5 visualization
                         if self.show_design_viz:
                                 plot_design(nf_data_)
-
 
                 self.nf_data = nf_data
                 if estimate_delays:
@@ -730,28 +748,33 @@ class NFRealtime:
                 new_vals = np.array(new_vals, dtype=float)
 
                 ## normalize
-                shifts = arr = np.arange(0, n_labels * 5, 5)
-                scales = [(0, self.scales_dict[k]) for k in self._mods]
+                shifts = np.arange(0, n_labels * 2, 2)
+                scales = [self.scales_dict[k] for k in self._mods]
+                print(f"scales: {scales}")
+                print(f"new_vals: {new_vals}")
 
                 norm_vals = []
-                for val, (min_val, max_val), shift in zip(new_vals, scales, shifts):
-                        norm = (val - min_val) / (max_val - min_val) + shift
+                for val, scale, shift in zip(new_vals, scales, shifts):
+                        norm = (val / scale) + shift
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
+                print(f"norm_vals: {norm_vals}")
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
                         self.plot_data = np.zeros(shape=(n_labels, len(self.time_axis)))
                         self.curves = []
-                        colors = [pg.mkPen(color=color, width=2) for color in self.colors_list]
+                        colors = [pg.mkPen(color=color, width=4) for color in self.colors_list]
                         for lb in range(n_labels):
                                 pen = colors[lb % len(colors)]
                                 curve = self.plot_widget.plot(self.time_axis, self.plot_data[lb, :], pen=pen, name=labels[lb])
                                 self.curves.append(curve)
                         
                         if self.legend is None:
+                                print("hello")
                                 self.legend = self.plot_widget.addLegend()
                                 self.legend.setLabelTextSize('14pt')
+                                self.legend.anchor(itemPos=(0,0), parentPos=(0,0))
 
                 self.plot_data = np.roll(self.plot_data, -1, axis=1)
                 self.plot_data[:, -1] = norm_vals
@@ -759,10 +782,8 @@ class NFRealtime:
                 # Update curves
                 for lb, curve in enumerate(self.curves):
                         curve.setData(self.time_axis, self.plot_data[lb, :])
-
-
         
-        def plot_rt(self):
+        def plot_rt(self, bufsize=0.2):
                 """
                 Visualize EEG signals in real-time from the LSL stream.
 
@@ -779,10 +800,9 @@ class NFRealtime:
 
                 Examples
                 --------
-                >>> session.plot_rt()
+                >>> session.plot_rt(bufsize=0.2)
                 """  
-                viewer_thread = threading.Thread(target=lambda: StreamViewer(stream_name=self.stream.name), daemon=True)
-                viewer_thread.start()
+                Viewer(stream_name=self.stream.name).start(bufsize)
         
         def plot_delays(self):
                 """
@@ -856,6 +876,51 @@ class NFRealtime:
                                         inv=inv,
                                         overwrite=True
                                         )
+
+        def run_orica(
+                        self, 
+                        learning_rate=0.1, 
+                        block_size=256,
+                        online_whitening=True,
+                        calibrate_pca=False,
+                        forgetfac=1.0,
+                        nonlinearity="tanh",
+                        random_state=None
+                        ):
+                """
+                Initialize an online ICA (ORICA) instance for real-time artifact removal.
+
+                Parameters
+                ----------
+                learning_rate : float
+                        Learning rate for online ICA updates.
+                block_size : int
+                        Number of samples processed per update.
+                online_whitening : bool
+                        Whether to apply online whitening to the data.
+                calibrate_pca : bool
+                        If True, calibrates PCA before running ICA.
+                forgetfac : float
+                        Forgetting factor for ORICA update (1.0 means no forgetting).
+                nonlinearity : str
+                        Nonlinearity function used in ICA (e.g., 'tanh', 'cube').
+                random_state : int | None
+                        Random seed for reproducibility.
+
+                Notes
+                -----
+                After initialization, use `self.orica.transform(data_chunk)` to process data,
+                and optionally remove identified artifact components.
+                """
+                self.orica = ORICA(
+                        learning_rate=learning_rate,
+                        block_size=block_size,
+                        online_whitening=online_whitening,
+                        calibrate_pca=calibrate_pca,
+                        forgetfac=forgetfac,
+                        nonlinearity=nonlinearity,
+                        random_state=random_state
+                )
 
         def save(self, nf_data=True, acq_delay=True, method_delay=True, raw_data=False, format="json"):
                 """
@@ -989,7 +1054,6 @@ class NFRealtime:
                                 relative=self.params["relative"]
                                 )
                 return precomp
-
 
         def _argmax_freq_prep(self):
                 """
