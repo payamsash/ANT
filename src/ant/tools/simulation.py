@@ -15,7 +15,8 @@ from mne import (
 from mne.simulation import (
                             SourceSimulator,
                             simulate_raw,
-                            add_noise
+                            add_noise,
+                            add_eog
                             )
 
 def simulate_eeg_raw(
@@ -27,6 +28,7 @@ def simulate_eeg_raw(
                         n_repetition,
                         start,
                         iir_filter=[0.2, -0.2, 0.04],
+                        fname_save=None,
                         verbose=None
                     ):
     """Simulate EEG data with a sinusoidal source in a given brain label.
@@ -133,10 +135,14 @@ def simulate_eeg_raw(
     raw = simulate_raw(raw.info, source_simulator, forward=fwd)
     cov = make_ad_hoc_cov(raw.info)
     add_noise(raw, cov, iir_filter=iir_filter)
+    add_eog(raw)
 
     ## save
     sim_dir = data_dir / "simulated"
     os.makedirs(sim_dir, exist_ok=True)
-    raw.save(fname=sim_dir / f"{brain_label}_{frequency}Hz_{amplitude}-raw.fif")
+    if fname_save is None:
+        raw.save(fname=sim_dir / f"{brain_label}_{frequency}Hz_{amplitude}-raw.fif", overwrite=True)
+    else:
+        raw.save(fname=fname_save)
 
     return raw

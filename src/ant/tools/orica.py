@@ -1,6 +1,5 @@
 import numpy as np
 
-
 class ORICA:
     """Online Recursive ICA (ORICA) for EEG data.
 
