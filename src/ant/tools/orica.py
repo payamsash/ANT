@@ -53,6 +53,7 @@ class ORICA:
         self.whitening_ = np.eye(n_channels)
         self._calibrated = False
 
+    # ---------- Nonlinearities ----------
     def _nonlinear_func(self, Y):
         if self.nonlinearity == "tanh":
             gY = np.tanh(Y)
@@ -67,9 +68,9 @@ class ORICA:
             raise ValueError(f"Unknown nonlinearity {self.nonlinearity}")
         return gY, gprime
 
+    # ---------- Whitening ----------
     def _update_whitening(self, X):
         """Update whitening matrix with forgetting factor."""
-        # update mean
         self.mean_ = self.forgetfac * self.mean_ + (1 - self.forgetfac) * X.mean(axis=1, keepdims=True)
         Xc = X - self.mean_
 
@@ -82,32 +83,40 @@ class ORICA:
 
         return self.whitening_ @ Xc
 
-    def partial_fit(self, X):
-        """Update unmixing matrix with a new block of EEG data.
+    def _apply_whitening(self, X):
+        """Apply current whitening without updating (fix for #2)."""
+        Xc = X - self.mean_
+        return self.whitening_ @ Xc
 
-        Parameters
-        ----------
-        X : array, shape (n_channels, n_times)
-            New data block (continuous EEG).
-        """
+    # ---------- Fit ----------
+    def partial_fit(self, X):
+        """Update unmixing matrix with a new block of EEG data."""
         if X.shape[0] != self.n_channels:
             raise ValueError(f"Expected {self.n_channels} channels, got {X.shape[0]}")
 
-        # whitening
+        # fix for #1 (separate calibration vs online whitening)
         if self.online_whitening:
             if self.calibrate_pca and not self._calibrated:
-                # fix whitening from first block
-                self._update_whitening(X)
+                Xw = self._update_whitening(X)
                 self._calibrated = True
-            Xw = self._update_whitening(X)
+            elif self.calibrate_pca and self._calibrated:
+                Xw = self._apply_whitening(X)
+            else:
+                Xw = self._update_whitening(X)
         else:
             Xw = X - X.mean(axis=1, keepdims=True)
 
+        # ICA update
         Y = self.W @ Xw
         gY, gprime = self._nonlinear_func(Y)
-        dW = (np.eye(self.n_channels) + (gY @ Y.T) / X.shape[1]) @ self.W
+
+        # fix for #3 (include gprime term for stability)
+        N = X.shape[1]
+        dW = ((np.eye(self.n_channels) - np.mean(gprime, axis=1)[:, None]) @ self.W +
+                (gY @ Y.T) / N @ self.W)
+
         self.W += self.learning_rate * dW
-        self.W, _ = np.linalg.qr(self.W)
+        self.W, _ = np.linalg.qr(self.W)  # keep W orthogonal
 
         return self
 
@@ -115,7 +124,10 @@ class ORICA:
     def transform(self, X):
         """Apply learned unmixing to data (without updating W)."""
         if self.online_whitening:
-            Xw = self._update_whitening(X)
+            if self.calibrate_pca and self._calibrated:
+                Xw = self._apply_whitening(X)  # fix for #2
+            else:
+                Xw = self._apply_whitening(X)  # never update in transform
         else:
             Xw = X - X.mean(axis=1, keepdims=True)
         return self.W @ Xw
@@ -125,30 +137,22 @@ class ORICA:
         self.partial_fit(X)
         return self.transform(X)
 
+    def inverse_transform(self, X):
+        """ Reconstruct EEG from sources. """
+        if self.W is None:
+            raise RuntimeError("Model has not been fitted yet.")
+        A = np.linalg.pinv(self.W)
+        X_rec = A @ X
+        X_rec += self.mean_
+        return X_rec
+
+    # ---------- Blink IC detection ----------
     def find_blink_ic(self, template_map, threshold=0.8):
-        """
-        Find IC(s) that best match a template blink spatial map.
-
-        Parameters
-        ----------
-        template_map : ndarray, shape (n_channels,)
-            Spatial topography of a blink component (from prior ICA).
-        threshold : float
-            Correlation threshold to accept ICs as blink.
-
-        Returns
-        -------
-        blink_idx : list of int
-            Indices of components matching the template.
-        corrs : ndarray, shape (n_components,)
-            Correlation values for each IC.
-        """
         if self.W is None:
             raise RuntimeError("Model has not been fitted yet.")
 
-        # mixing matrix (channels × components)
-        A = np.linalg.pinv(self.W)
+        A = np.linalg.pinv(self.W)  # mixing matrix
         corrs = np.array([np.corrcoef(A[:, ic], template_map)[0, 1]
                             for ic in range(A.shape[1])])
         blink_idx = np.where(np.abs(corrs) > threshold)[0].tolist()
-        return blink_idx, corrs 
+        return blink_idx, corrs
