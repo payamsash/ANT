@@ -604,8 +604,15 @@ class NFRealtime:
                         self.scales_dict = {
                                                 "sensor_power": 7e-13,
                                                 "band_ratio": 1.5,
+                                                "source_power": 3e-2,
+                                                "sensor_connectivity": 1,
+                                                "source_connectivity": 1,
+                                                "sensor_graph": 0.05, 
+                                                "source_graph": 2e-17, 
                                                 "entropy": 0.35,
-                                                } # implement the others as well
+                                                "argmax_freq": 8,
+                                                "individual_peak_power": 1
+                                                }
 
                         self.legend = None
                         self.curve = self.plot_widget.plot(pen='y')
@@ -642,10 +649,11 @@ class NFRealtime:
                         if self.artifact_correction == "orica":
                                 art_tic = time.time()
                                 sources = self.orica.transform(data)
-                                blink_idx, corrs = self.orica.find_blink_ic(self.blink_template, threshold=0.6)
+                                blink_idx, corrs = self.orica.find_blink_ic(self.blink_template, threshold=0.4)
                                 # print(f"blink_idx and corr: {blink_idx}, {corrs}")
                                 sources_clean = sources.copy()
                                 if blink_idx:
+                                        print(blink_idx)
                                         for idx in blink_idx:
                                                 sources_clean[idx, :] = 0.0
                                         data = self.orica.inverse_transform(sources_clean)
@@ -666,7 +674,7 @@ class NFRealtime:
                                 self.app.processEvents()
                                 if estimate_delays:
                                         plot_delays.append(time.time() - plot_tic)
-                                time.sleep(0.01)
+                                time.sleep(0.005)
 
                         ## Py5 visualization
                         if self.show_design_viz:
@@ -851,6 +859,7 @@ class NFRealtime:
                         norm = (val / scale) + shift
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
+                print(norm_vals)
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
@@ -1133,21 +1142,18 @@ class NFRealtime:
                                                                 picks=self.picks,
                                                                 method=self.params["method"]
                                                                 )
-                fft_window, freq_band, freq_band_idxs, _ = \
-                                                        compute_fft(
-                                                                sfreq=self._sfreq,
-                                                                winsize=self.winsize,
-                                                                freq_range=self.params["frange"],
-                                                                freq_res=1
-                                                                )
+                n_samples = int(self.winsize * self._sfreq)
+                fft_window = np.hanning(n_samples)
+                freqs = np.fft.rfftfreq(self.window_size_s, d=1/self.rec_info["sfreq"])
+                freq_band_mask = (freqs >= self.params["frange"][0]) & (freqs <= self.params["frange"][1])
+                freqs_band = freqs[freq_band_mask]
                 
-                ap_model = (10 ** ap_params[0]) / (freq_band ** ap_params[1])
-                gaussian = lambda freq_band, amplitude, mean, stddev: \
-                                amplitude * np.exp(-(freq_band - mean)**2 / (2 * stddev**2))
+                ap_model = (10 ** ap_params[0]) / (freqs_band ** ap_params[1])
+                gaussian = lambda x, a, mu, sigma: a * np.exp(-(x - mu)**2 / (2 * sigma**2))
                 precomp = {
                         "fft_window": fft_window,
-                        "freq_band": freq_band,
-                        "freq_band_idxs": freq_band_idxs,
+                        "freq_band_mask": freq_band_mask,
+                        "freqs_band": freqs_band,
                         "ap_model": ap_model,
                         "gaussian": gaussian
                         }
@@ -1459,7 +1465,7 @@ class NFRealtime:
                 return bp.mean()
 
         @timed
-        def _argmax_freq(self, data, fft_window, freq_band, freq_band_idxs, ap_model, gaussian):
+        def _argmax_freq(self, data, fft_window, freq_band_mask, freqs_band, ap_model, gaussian):
                 """
                 Compute the individual peak frequency using FFT and a Gaussian fit.
 
@@ -1485,11 +1491,18 @@ class NFRealtime:
                 """
                 data = np.multiply(data, fft_window)
                 fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                total_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-                periodic_power = (total_power - ap_model).mean(axis=0)
+                freqs = np.fft.rfftfreq(data.shape[-1], d=1/self._sfreq)
+                freq_band_mask = (freqs >= self.params["frange"][0]) & (freqs <= self.params["frange"][1])
+                freqs_band = freqs[freq_band_mask]
+                total_power_band = np.mean(np.square(fftval[:, freq_band_mask]), axis=0)
+                periodic_power = total_power_band - ap_model
+
+                p0 = [periodic_power.max(), 10.5, 1.0]
+                
                 try:
-                        popt, _ = curve_fit(gaussian, freq_band, periodic_power)
+                        popt, _ = curve_fit(gaussian, freqs_band, periodic_power, p0=p0)
                         individual_peak = popt[1]
+                        print(f"individual peak : {individual_peak}")
                 except RuntimeError:
                         individual_peak = 0 
                         warn(f"fitting failed and individual peak value is set to 0.")
