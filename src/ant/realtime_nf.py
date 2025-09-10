@@ -11,6 +11,7 @@ import threading
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.signal import sosfiltfilt
+import matplotlib.pyplot as plt
 
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
@@ -177,7 +178,7 @@ class NFRealtime:
                         or (montage.endswith(".bvct") and Path(montage).is_file())
                         ):
                         raise ValueError(
-                                f"`montage` must be one of the built-in montages {builtin} "
+                                f"`montage` must be one of the built-in montages "
                                 f"or a valid '.bvct' file path. Got {montage!r}."
                         )
 
@@ -345,16 +346,17 @@ class NFRealtime:
                         stream = Stream(
                                         bufsize=self.bufsize,
                                         name=None,
-                                        source_id=source_id
+                                        source_id=self.source_id
                                         )
                         stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
-                        stream.set_montage(montage, on_missing="warn")
+                        stream.set_montage(self.montage, on_missing="warn")
                         stream.pick("eeg")
                         stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
                         self.stream = stream
                         
                 self.sfreq = stream.info["sfreq"]  
                 self.rec_info = stream.info     
+                self.rec_info["subject_info"] = {"his_id": self.subject_id}
 
                 ## copying attributes
                 for attr_name in dir(self.stream):
@@ -1064,7 +1066,7 @@ class NFRealtime:
                 """
                 report = Report(title=f"Neurofeedback Session with {self.modality} modality")
                 report.add_raw(self.raw_baseline, title="Baseline recording", psd=False, butterfly=False)
-
+                if isinstance(self.modality, str): self.modality = [self.modality]
                 for mod in self.modality:
                         if not "source" in mod:
                                 if self.picks is not None:
