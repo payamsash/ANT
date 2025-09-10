@@ -560,12 +560,7 @@ class NFRealtime:
                 if self.artifact_correction == "lms":
                         ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
                 if self.artifact_correction == "orica":
-                        self.run_orica(
-                                        n_chs=len(self.rec_info["ch_names"]),
-                                        n_components=10,
-                                        onlineWhitening=True,
-                                        forgetfac=0.99
-                                        )
+                        self.run_orica(n_channels=len(self.rec_info["ch_names"]), forgetfac=0.99)
 
                 ## preparing the methods
                 if isinstance(modality, str): 
@@ -647,14 +642,13 @@ class NFRealtime:
                         if self.artifact_correction == "orica":
                                 art_tic = time.time()
                                 sources = self.orica.transform(data)
-                                blink_score = np.abs(np.dot(
-                                                        sources.T, self.blink_template) /
-                                                        (np.linalg.norm(sources, axis=1) * \
-                                                        np.linalg.norm(self.blink_template) + 1e-12))
-                                blink_idx = np.argmax(blink_score)
-                                if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
-                                        sources[blink_idx, :] = 0
-                                data = self.orica.inverse_transform(sources)
+                                blink_idx, corrs = self.orica.find_blink_ic(self.blink_template, threshold=0.6)
+                                # print(f"blink_idx and corr: {blink_idx}, {corrs}")
+                                sources_clean = sources.copy()
+                                if blink_idx:
+                                        for idx in blink_idx:
+                                                sources_clean[idx, :] = 0.0
+                                        data = self.orica.inverse_transform(sources_clean)
                                 artifact_delays.append(time.time() - art_tic)
 
                         ## compute nf
@@ -732,7 +726,6 @@ class NFRealtime:
                 #                 ## QT signal vizualisation
                 #                 if self.show_nf_signal:
                 #                         now = time.time()
-                #                         print(now - last_plot_time)
                 #                         if (now - last_plot_time) >= plot_interval:
                 #                                 plot_tic = time.time()
                 #                                 last_vals = [nf_data[key][-1] for key in mods]
@@ -852,15 +845,12 @@ class NFRealtime:
                 ## normalize
                 shifts = np.arange(0, n_labels * 2, 2)
                 scales = [self.scales_dict[k] for k in self._mods]
-                print(f"scales: {scales}")
-                print(f"new_vals: {new_vals}")
 
                 norm_vals = []
                 for val, scale, shift in zip(new_vals, scales, shifts):
                         norm = (val / scale) + shift
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
-                print(f"norm_vals: {norm_vals}")
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
@@ -873,7 +863,6 @@ class NFRealtime:
                                 self.curves.append(curve)
                         
                         if self.legend is None:
-                                print("hello")
                                 self.legend = self.plot_widget.addLegend()
                                 self.legend.setLabelTextSize('14pt')
                                 self.legend.anchor(itemPos=(0,0), parentPos=(0,0))
@@ -933,7 +922,8 @@ class NFRealtime:
                                         )
 
         def run_orica(
-                        self, 
+                        self,
+                        n_channels,
                         learning_rate=0.1, 
                         block_size=256,
                         online_whitening=True,
@@ -968,6 +958,7 @@ class NFRealtime:
                 and optionally remove identified artifact components.
                 """
                 self.orica = ORICA(
+                        n_channels=n_channels,
                         learning_rate=learning_rate,
                         block_size=block_size,
                         online_whitening=online_whitening,
