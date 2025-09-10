@@ -906,53 +906,6 @@ class NFRealtime:
                 """  
                 Viewer(stream_name=self.stream.name).start(bufsize)
         
-        def plot_delays(self):
-                """
-                Plot histograms of acquisition and method delays in neural feature computation.
-
-                Returns
-                -------
-                matplotlib.figure.Figure
-                        Figure containing two subplots: acquisition delays and method delays.
-
-                Notes
-                -----
-                - Delays are converted to milliseconds.
-                - Histogram bins are adapted based on the selected modality ('sensor_power' or 'source_power').
-                - Axes limits are adjusted to reflect typical delay ranges for each modality.
-
-                Examples
-                --------
-                >>> fig = session.plot_delays()
-                >>> fig.show()
-                """ 
-                acq_delays_ms = np.array(self.acq_delays) * 1e3 # ms
-                method_delays_ms = np.array(self.method_delays) * 1e3 # ms
-                colors = ['#1f77b4', '#d62728']
-                fig_delays, axs = plt.subplots(1, 2, figsize=(13, 4))
-
-                if self.modality == "sensor_power":
-                        bins = 1000
-                if self.modality == "source_power":
-                        bins = 50 
-
-                for i, data, title in zip(range(2), [acq_delays_ms, method_delays_ms], ["acquisition", "method"]):
-                        sns.histplot(data=data, log_scale=False, fill=False, kde=False,
-                                        bins=bins, color=colors[i], ax=axs[i])
-                        axs[i].spines['top'].set_visible(False)
-                        axs[i].spines['right'].set_visible(False)
-                        axs[i].set_xlabel("delays (ms)")
-                        axs[i].set_title(f"avg {title} delay: {round(data.mean(), 3)} ms")
-
-                        if self.modality == "sensor_power":
-                                axs[i].set_xlim([0, 0.1])
-                
-                if self.modality == "source_power":
-                        axs[0].set_xlim([0, 1])
-                        axs[1].set_xlim([100, 300])
-                
-                return fig_delays
-        
         def compute_inv_operator(self):
                 """
                 Compute and save the inverse operator for source localization.
