@@ -538,13 +538,24 @@ class NFRealtime:
                 self.picks = picks
                 self.modality_params = modality_params
                 self.winsize = winsize
-                self.window_size_s = self.winsize * self.rec_info["sfreq"]
+                self.window_size_s = int(self.winsize * self.rec_info["sfreq"])
                 self.estimate_delays = estimate_delays
                 self._sfreq = self.rec_info["sfreq"]
                 self.show_raw_signal = show_raw_signal
                 self.show_nf_signal = show_nf_signal
                 self.show_design_viz = show_design_viz
                 self.design_viz = design_viz
+
+                ######## If you don't want to use ring buffer ...
+                # # fetch_secs can be tuned; larger => fewer LSL calls, but larger latency for new info
+                # fetch_secs = max(self.winsize * 4, 2.0)      # fetch at least 2s or 4x winsize
+                # fetch_size_s = int(fetch_secs * self._sfreq)  # samples fetched per LSL call
+                # # hop between consecutive processed windows (50% overlap by default)
+                # hop_samples = max(self.window_size_s // 2, 1)
+                # n_ch = len(self.rec_info["ch_names"])
+                # ring_buffer = np.zeros((n_ch, 0), dtype=np.float32)
+                # last_plot_time = 0.0
+                # plot_interval = 0.05  # seconds between UI updates (tweak to taste)
 
                 if self.artifact_correction == "lms":
                         ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
@@ -579,7 +590,9 @@ class NFRealtime:
                 
                 if estimate_delays:
                         acq_delays = []
+                        artifact_delays = []
                         method_delays = {mod: [] for mod in mods}
+                        plot_delays = []
                         
                 ## add vizualisation
                 if self.show_nf_signal:
@@ -608,15 +621,16 @@ class NFRealtime:
                         self.plot_rt()
                 if self.show_design_viz:
                         pass
-                
-                ## now the real part!
+
+                if self.filtering:
+                        self.stream.filter(l_freq=l_freq, h_freq=h_freq)
+
                 nf_data = {mod: [] for mod in mods}
                 t_start = local_clock()
+
+                ######## If you don't want to use ring buffer ...
                 while local_clock() < t_start + self.duration:
                         tic = time.time()
-                        ## add filtering
-                        if self.filtering:
-                                self.stream.filter(l_freq=l_freq, h_freq=h_freq)
 
                         ## get data
                         data = self.stream.get_data(self.winsize, picks=self.picks)[0] # n_chs * n_times
@@ -626,9 +640,12 @@ class NFRealtime:
 
                         ## add artifact correction
                         if self.artifact_correction == "lms":
+                                art_tic = time.time()
                                 data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                                artifact_delays.append(time.time() - art_tic)
                         
                         if self.artifact_correction == "orica":
+                                art_tic = time.time()
                                 sources = self.orica.transform(data)
                                 blink_score = np.abs(np.dot(
                                                         sources.T, self.blink_template) /
@@ -638,6 +655,7 @@ class NFRealtime:
                                 if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
                                         sources[blink_idx, :] = 0
                                 data = self.orica.inverse_transform(sources)
+                                artifact_delays.append(time.time() - art_tic)
 
                         ## compute nf
                         for idx, mod in enumerate(mods):
@@ -648,22 +666,106 @@ class NFRealtime:
 
                         ## QT signal vizualisation
                         if self.show_nf_signal:
+                                plot_tic = time.time()
                                 last_vals = [nf_data[key][-1] for key in mods]
                                 self.update_nf_plot(last_vals, labels=mods)
                                 self.app.processEvents()
+                                if estimate_delays:
+                                        plot_delays.append(time.time() - plot_tic)
                                 time.sleep(0.01)
 
                         ## Py5 visualization
                         if self.show_design_viz:
                                 plot_design(nf_data_)
 
+                ######## If you want to use ring buffer ...
+                # while local_clock() < t_start + self.duration:
+                #         fetch_tic = time.time()
+                #         fetched = self.stream.get_data(fetch_secs, picks=self.picks)[0]  # shape: n_ch x n_samples
+                #         acq_delay = time.time() - fetch_tic
+                #         if estimate_delays:
+                #                 acq_delays.append(acq_delay)
+                        
+                #         if fetched is None or fetched.size == 0:
+                #                 time.sleep(0.001)
+                #                 continue
+
+                #         ring_buffer = np.concatenate((ring_buffer, fetched), axis=1)
+                #         max_buf_len = fetch_size_s + self.window_size_s
+                #         if ring_buffer.shape[1] > max_buf_len:
+                #                 ring_buffer = ring_buffer[:, -max_buf_len:]
+
+                #         while ring_buffer.shape[1] >= self.window_size_s:
+                #                 window = ring_buffer[:, :self.window_size_s].copy()  # shape n_ch x window_size_s
+
+                #                 ## add artifact correction
+                #                 if self.artifact_correction is not None:
+                #                         art_tic = time.time()
+                #                         if self.artifact_correction == "lms":
+                #                                 window = remove_blinks_lms(window, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                                        
+                #                         elif self.artifact_correction == "orica":
+                #                                 sources = self.orica.transform(window)
+                #                                 blink_score = np.abs(np.dot(
+                #                                                         sources.T, self.blink_template) /
+                #                                                         (np.linalg.norm(sources, axis=1) * \
+                #                                                         np.linalg.norm(self.blink_template) + 1e-12))
+                #                                 blink_idx = np.argmax(blink_score)
+                #                                 if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
+                #                                         sources[blink_idx, :] = 0
+                #                                 #data = self.orica.inverse_transform(sources)
+                #                                 window = self.orica.inverse_transform(sources)
+                #                         if estimate_delays:
+                #                                 artifact_delays.append(time.time() - art_tic)
+
+                #                 ## compute nf
+                #                 for idx, mod in enumerate(mods):
+                #                         meth_tic = time.time()
+                #                         nf_data_, method_delay = nf_mods[idx](window, **precomps[idx])
+                #                         nf_data[mod].append(nf_data_)
+                #                         if estimate_delays:
+                #                                 method_delays[mod].append({
+                #                                                         "measured": time.time() - meth_tic,
+                #                                                         "reported": method_delay
+                #                                                         })
+
+                #                 ## QT signal vizualisation
+                #                 if self.show_nf_signal:
+                #                         now = time.time()
+                #                         print(now - last_plot_time)
+                #                         if (now - last_plot_time) >= plot_interval:
+                #                                 plot_tic = time.time()
+                #                                 last_vals = [nf_data[key][-1] for key in mods]
+                #                                 self.update_nf_plot(last_vals, labels=mods)
+                #                                 self.app.processEvents()
+                #                                 if estimate_delays:
+                #                                         plot_delays.append(time.time() - plot_tic)
+                #                                 last_plot_time = now
+
+                #                 ## Py5 visualization
+                #                 if self.show_design_viz:
+                #                         plot_design(nf_data_)
+
+                #                 ring_buffer = ring_buffer[:, hop_samples:]
+
+
                 self.nf_data = nf_data
                 if estimate_delays:
                         self.acq_delays = acq_delays
+                        self.artifact_delays = artifact_delays
                         self.method_delays = method_delays
-                        self.save(nf_data=True, acq_delay=True, method_delay=True, format="json")
+                        self.plot_delays = plot_delays
+                        self.save(nf_data=True,
+                                acq_delay=True,
+                                artifact_delay=True,
+                                method_delay=True,
+                                format="json")
                 else:
-                        self.save(nf_data=True, acq_delay=False, method_delay=False, format="json")
+                        self.save(nf_data=True,
+                                acq_delay=False,
+                                artifact_delay=False,
+                                method_delay=False,
+                                format="json")
 
                 self.app.exec()
         
@@ -922,7 +1024,7 @@ class NFRealtime:
                         random_state=random_state
                 )
 
-        def save(self, nf_data=True, acq_delay=True, method_delay=True, raw_data=False, format="json"):
+        def save(self, nf_data=True, acq_delay=True, artifact_delay=True, method_delay=True, raw_data=False, format="json"):
                 """
                 Save neurofeedback session data to disk.
 
@@ -970,6 +1072,12 @@ class NFRealtime:
                                 fname = self.subject_dir / "delays" / f"acq_delay_visit_{self.visit}.json"
                                 with open(fname, "w") as file:
                                         json.dump(self.acq_delays, file)
+
+                        if artifact_delay:
+                                fname = self.subject_dir / "delays" / f"artifact_delay_visit_{self.visit}.json"
+                                with open(fname, "w") as file:
+                                        json.dump(self.artifact_delays, file)
+
                         if method_delay:
                                 fname = self.subject_dir / "delays" / f"method_delay_visit_{self.visit}.json"
                                 with open(fname, "w") as file:
