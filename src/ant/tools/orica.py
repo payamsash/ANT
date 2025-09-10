@@ -147,7 +147,7 @@ class ORICA:
         return X_rec
 
     # ---------- Blink IC detection ----------
-    def find_blink_ic(self, template_map, threshold=0.8):
+    def find_blink_ic(self, template_map, threshold=0.7):
         if self.W is None:
             raise RuntimeError("Model has not been fitted yet.")
 
