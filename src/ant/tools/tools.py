@@ -662,12 +662,12 @@ def create_blink_template(raw, max_iter=800, method="infomax"):
                 The spatial topography of the ICA component corresponding to the blink
                 (shape: n_channels x 1). If no blink component is detected, returns None.
         """
-        ica = ICA(n_components=0.95, max_iter=max_iter, method=method, fit_params=dict(extended=True))
+        ica = ICA(n_components=0.95, max_iter=max_iter, method=method, fit_params=dict(extended=True), random_state=0)
         
         try:
                 ica.fit(raw)
         except Exception:
-                ica = ICA(n_components=5, max_iter=max_iter, method=method, fit_params=dict(extended=True))
+                ica = ICA(n_components=5, max_iter=max_iter, method=method, fit_params=dict(extended=True), random_state=0)
                 ica.fit(raw)
 
         ic_dict = label_components(raw, ica, method="iclabel")
