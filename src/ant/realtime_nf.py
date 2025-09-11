@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtWidgets
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QPushButton, QInputDialog
+from PyQt6.QtWidgets import QPushButton
 
 import mne
 from mne import set_log_level, read_labels_from_annot, Report
@@ -598,11 +598,11 @@ class NFRealtime:
                         self.plot_widget = pg.PlotWidget(title="Neurofeedback")
                         self.plot_widget.showGrid(x=True, y=True)
                         self.plot_widget.setLabel('bottom', 'Time', units='s')
-                        self.plot_widget.setLabel('left', 'Channels')
-                        self.plot_widget.setYRange(-1, len(mods) * 5)
+                        self.plot_widget.setLabel('left', 'NF Signals')
                         self.plot_widget.resize(1000, 500)
                         self.plot_widget.showGrid(x=True, y=True)
                         self.plot_widget.show()
+                        self.axis_color = pg.getConfigOption("foreground")
                         self.colors_list = ["#5DA5A4", "#9A7DFF", "#FFB085", "#8FBF87", "#D98BA3", "#E0C368"]
                         self.scales_dict = {
                                                 "sensor_power": 7e-13,
@@ -612,19 +612,36 @@ class NFRealtime:
                                                 "source_connectivity": 1,
                                                 "sensor_graph": 0.05, 
                                                 "source_graph": 2e-17, 
-                                                "entropy": 0.6,
+                                                "entropy": 0.45,
                                                 "argmax_freq": 8,
                                                 "individual_peak_power": 1
                                                 }
                         self.channel_scales = [1.0] * len(self._mods)
-                        self.scale_buttons = []
-                        for i, label in enumerate(self._mods):
-                                btn = QPushButton(f"Scale: {label}")
-                                btn.setParent(self.plot_widget)          
-                                btn.move(10, 30 + i*30)             
-                                btn.show()
-                                btn.clicked.connect(lambda checked, idx=i: self.ask_channel_scale(idx))
-                                self.scale_buttons.append(btn)
+                        self.scale_buttons_plus = []
+                        self.scale_buttons_minus = []
+                        self.shifts = np.arange(0, len(self._mods) * 2, 2)
+                        self.plot_widget.setYRange(-1 + self.shifts[0], 1 + self.shifts[-1])
+
+                        for i, shift in enumerate(self.shifts):
+                                vb = self.plot_widget.getViewBox()
+                                pos = vb.mapViewToScene(QtCore.QPointF(0, shift))  # returns QPointF
+                                px, py = pos.x(), pos.y()
+
+                                # Plus button
+                                btn_plus = QPushButton("+", self.plot_widget)
+                                btn_plus.setStyleSheet(f"color: {self.axis_color}; font-weight: bold;")
+                                btn_plus.resize(20, 20)
+                                btn_plus.move(10, int(py) - 10)  # center button vertically
+                                btn_plus.show()
+                                btn_plus.clicked.connect(lambda checked, idx=i: self.scale_up(idx))
+
+                                # Minus button
+                                btn_minus = QPushButton("-", self.plot_widget)
+                                btn_minus.setStyleSheet(f"color: {self.axis_color}; font-weight: bold;")
+                                btn_minus.resize(20, 20)
+                                btn_minus.move(40, int(py) - 10)
+                                btn_minus.show()
+                                btn_minus.clicked.connect(lambda checked, idx=i: self.scale_down(idx))
 
 
                         # self.legend = None
@@ -865,15 +882,13 @@ class NFRealtime:
                 new_vals = np.array(new_vals, dtype=float)
 
                 ## normalize
-                shifts = np.arange(0, n_labels * 5, 5)
                 scales = [self.scales_dict[k] for k in self._mods]
-
                 norm_vals = []
-                for val, vmin, shift, ch_scale in zip(new_vals, scales, shifts, self.channel_scales):
-                        norm = (val - vmin) / (7 * vmin) * 5 * ch_scale + shift
+                for val, scale, shift, ch_scale in zip(new_vals, scales, self.shifts, self.channel_scales):
+                        norm = ((val / scale) * ch_scale) + shift
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
-                print(norm_vals)
+                # print(norm_vals)
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
@@ -892,9 +907,8 @@ class NFRealtime:
 
                         if self.text_items is None:
                                 self.text_items = []
-                                axis_color = pg.getConfigOption("foreground")
                                 pretty_labels = [lbl.replace("_", " ").title() for lbl in labels]
-                                yticks = list(zip(shifts, pretty_labels))
+                                yticks = list(zip(self.shifts, pretty_labels))
                                 self.plot_widget.getAxis('left').setTicks([yticks])
 
                 self.plot_data = np.roll(self.plot_data, -1, axis=1)
@@ -904,16 +918,11 @@ class NFRealtime:
                 for lb, curve in enumerate(self.curves):
                         curve.setData(self.time_axis, self.plot_data[lb, :])
 
-        def ask_channel_scale(self, ch_idx):
-                scale, ok = QInputDialog.getDouble(
-                        self, 
-                        "Channel Scale", 
-                        f"Set scale for {self._mods[ch_idx]}:", 
-                        self.channel_scales[ch_idx], 
-                        0.1, 100.0, 2
-                )
-                if ok:
-                        self.channel_scales[ch_idx] = scale
+        def scale_up(self, ch_idx):
+                self.channel_scales[ch_idx] *= 2
+
+        def scale_down(self, ch_idx):
+                self.channel_scales[ch_idx] /= 2
         
         def plot_rt(self, bufsize=0.2):
                 """
