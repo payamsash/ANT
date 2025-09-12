@@ -1,37 +1,41 @@
 ## don't enter here without a good guide!
+from __future__ import annotations
 
 import datetime
 import json
+import threading
 import time
 import uuid
-from pathlib import Path
-from warnings import warn
-import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Optional
+from warnings import warn
 
-import numpy as np
-from scipy.optimize import curve_fit
-from scipy.signal import sosfiltfilt
 import matplotlib.pyplot as plt
-
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtCore, QtWidgets
+import numpy as np
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QPushButton
+from pyqtgraph.Qt import QtCore, QtWidgets
+import pyqtgraph as pg
+from scipy.optimize import curve_fit
+from scipy.signal import sosfiltfilt
 
 import mne
-from mne import set_log_level, read_labels_from_annot, Report
-from mne.io import RawArray
+from mne import Report, read_labels_from_annot, set_log_level
 from mne.channels import get_builtin_montages, read_dig_captrak
-from mne.minimum_norm import apply_inverse_raw, read_inverse_operator, write_inverse_operator
+from mne.io import RawArray
+from mne.minimum_norm import (
+        apply_inverse_raw,
+        read_inverse_operator,
+        write_inverse_operator,
+)
 from mne_connectivity import spectral_connectivity_time
 from mne_features.univariate import (
-                                        compute_app_entropy,
-                                        compute_samp_entropy,
-                                        compute_spect_entropy,
-                                        compute_svd_entropy
-                                        )
-
+        compute_app_entropy,
+        compute_samp_entropy,
+        compute_spect_entropy,
+        compute_svd_entropy,
+)
 from mne_lsl.lsl import local_clock
 from mne_lsl.player import PlayerLSL as Player
 from mne_lsl.stream import StreamLSL as Stream
@@ -44,101 +48,54 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 class NFRealtime:
         """
-        Initialize a subject session for EEG/Neurofeedback processing.
+        EEG/Neurofeedback real-time session.
 
-        This constructor validates inputs, sets up session configuration, and prepares
-        logging. Optional preprocessing settings such as filtering and artifact correction
-        can be specified.
+        This class sets up a subject session for real-time EEG/neurofeedback
+        processing. It validates inputs, configures session parameters and
+        prepares logging. Optional preprocessing settings such as filtering
+        and artifact correction can be specified.
 
         Parameters
         ----------
         subject_id : str
                 Unique identifier for the subject. Must be a non-empty string.
         visit : int
-                Visit number. Must be a positive integer (>=1).
-        session : str
-                Session type. Must be one of the valid sessions defined in `VALID_SESSIONS`.
+                Visit number (>= 1).
+        session : {"baseline", "main"}
+                Session type.
         subjects_dir : str
                 Path to the directory containing subject data.
         montage : str
-                EEG montage. Can be a built-in montage or a path to a `.bvct` file.
+                EEG montage: either a built-in montage or a path to a ``.bvct`` file.
         mri : bool
-                Whether MRI data is available for the subject.
-        subject_fs_id : str, optional
-                FreeSurfer subject ID. Default is 'fsaverage'.
-        subjects_fs_dir : str | None, optional
-                Path to FreeSurfer subjects directory. Default is None.
-        filtering : bool, optional
-                Whether to apply band-pass filtering. Default is False.
-        l_freq : float, optional
-                Low frequency cutoff for filtering. Default is 1 Hz.
-        h_freq : float, optional
-                High frequency cutoff for filtering. Default is 40 Hz.
-        artifact_correction : str | bool, optional
-                Method for artifact correction. Must be one of `VALID_ARTIFACT_METHODS`. Default is False.
-        ref_channel : str, optional
-                Reference channel for EEG. Default is 'Fp1'.
-        save_raw : bool, optional
-                Whether to save raw EEG data. Default is True.
-        save_nf_signal : bool, optional
-                Whether to save the neurofeedback signal. Default is True.
-        config_file : str | None, optional
-                Path to a YAML config file. Default is project default config.
-        verbose : int | None, optional
-                Logging verbosity level. Default is None.
+                Whether MRI data are available.
+        subject_fs_id : str, default "fsaverage"
+                FreeSurfer subject ID.
+        subjects_fs_dir : str | None, default None
+                Path to FreeSurfer subjects directory.
+        filtering : bool, default False
+                Whether to apply band-pass filtering.
+        l_freq : float, default 1.0
+                Low-frequency cutoff (Hz).
+        h_freq : float, default 40.0
+                High-frequency cutoff (Hz).
+        artifact_correction : {False, "orica", "lms"}, default False
+                Artifact-correction method.
+        ref_channel : str, default "Fp1"
+                Reference EEG channel.
+        save_raw : bool, default True
+                Whether to save raw EEG data.
+        save_nf_signal : bool, default True
+                Whether to save the neurofeedback signal.
+        config_file : str | None, default None
+                Path to a YAML configuration file. If None, uses the project default.
+        verbose : int | None, default None
+                Logging verbosity level.
 
         Raises
         ------
         ValueError
-                If any of the input parameters fail validation checks.
-
-        Attributes
-        ----------
-        subject_id : str
-                Stored subject ID.
-        visit : int
-                Stored visit number.
-        session : str
-                Stored session type.
-        subjects_dir : str
-                Stored path to subjects directory.
-        montage : str
-                Stored EEG montage.
-        mri : bool
-                MRI availability flag.
-        subject_fs_id : str
-                FreeSurfer subject ID.
-        subjects_fs_dir : str | None
-                FreeSurfer subjects directory path.
-        filtering : bool
-                Band-pass filtering flag.
-        l_freq : float
-                Low frequency cutoff.
-        h_freq : float
-                High frequency cutoff.
-        artifact_correction : str | bool
-                Artifact correction method ('orica' or 'lms').
-        ref_channel : str
-                Reference channel.
-        save_raw : bool
-                Save raw EEG flag.
-        save_nf_signal : bool
-                Save neurofeedback signal flag.
-        config_file : str
-                Path to the config file used.
-        verbose : int | None
-                Logging verbosity level.
-
-        Examples
-        --------
-        >>> session = NFRealtime(
-        ...     subject_id="sub01",
-        ...     visit=1,
-        ...     session="baseline",
-        ...     subjects_dir="/data/subjects",
-        ...     montage="standard_1020",
-        ...     mri=True
-        ... )
+                If any parameter fails validation.
         """
 
         VALID_SESSIONS = {"baseline", "main"}
@@ -153,72 +110,70 @@ class NFRealtime:
                 montage: str,
                 mri: bool,
                 subject_fs_id: str = "fsaverage",
-                subjects_fs_dir: str = None,
-                filtering=False,
-                l_freq=1,
-                h_freq=40,
-                artifact_correction=False,
-                ref_channel="Fp1",
+                subjects_fs_dir: Optional[str] = None,
+                filtering: bool = False,
+                l_freq: float = 1.0,
+                h_freq: float = 40.0,
+                artifact_correction: bool | str = False,
+                ref_channel: str = "Fp1",
                 save_raw: bool = True,
                 save_nf_signal: bool = True,
-                config_file=None,
-                verbose=None,
-                ):
-                
+                config_file: Optional[str] = None,
+                verbose: Optional[int] = None,
+        ) -> None:
                 # --- Validation ---
-                if not isinstance(subject_id, str) or not subject_id.strip():
+                if not subject_id or not isinstance(subject_id, str):
                         raise ValueError("`subject_id` must be a non-empty string.")
 
                 if not isinstance(visit, int) or visit < 1:
                         raise ValueError("`visit` must be a positive integer (>= 1).")
 
                 if session not in self.VALID_SESSIONS:
-                        raise ValueError(f"`session` must be one of {self.VALID_SESSIONS}, got {session!r}.")
+                        raise ValueError(
+                                f"`session` must be one of {self.VALID_SESSIONS}, got {session!r}."
+                        )
 
                 if not (
                         montage in get_builtin_montages()
                         or (montage.endswith(".bvct") and Path(montage).is_file())
-                        ):
+                ):
                         raise ValueError(
-                                f"`montage` must be one of the built-in montages "
-                                f"or a valid '.bvct' file path. Got {montage!r}."
+                                "`montage` must be a built-in montage name or a valid '.bvct' file path."
                         )
 
-                if not isinstance(subject_id, str) or not subject_id.strip():
-                        raise ValueError("`subject_id` must be a non-empty string.")
-                
                 if not isinstance(mri, bool):
-                        raise ValueError("`mri` must be a boolean (True/False).")
+                        raise ValueError("`mri` must be a boolean.")
 
-                if not isinstance(subject_fs_id, str) or not subject_fs_id.strip():
+                if not subject_fs_id or not isinstance(subject_fs_id, str):
                         raise ValueError("`subject_fs_id` must be a non-empty string.")
 
-                if not (subjects_fs_dir is None or isinstance(subject_fs_id, str) or Path(subjects_fs_dir).isdir()):
-                        raise ValueError("`subject_fs_dir` must be None or path to a directory.")
+                if subjects_fs_dir is not None:
+                        if not Path(subjects_fs_dir).is_dir():
+                                raise ValueError("`subjects_fs_dir` must be None or an existing directory.")
 
                 if not isinstance(filtering, bool):
-                        raise ValueError("`filtering` must be bool.")
-                
+                        raise ValueError("`filtering` must be a boolean.")
+
                 if artifact_correction not in self.VALID_ARTIFACT_METHODS:
                         raise ValueError(
-                                f"`artifact_correction` must be one of {self.VALID_ARTIFACT_METHODS}, "
-                                f"got {artifact_correction!r}."
+                                f"`artifact_correction` must be one of "
+                                f"{self.VALID_ARTIFACT_METHODS}, got {artifact_correction!r}."
                         )
 
                 if not isinstance(save_raw, bool):
-                        raise ValueError("`save_raw` must be True or False.")
+                        raise ValueError("`save_raw` must be a boolean.")
 
                 if not isinstance(save_nf_signal, bool):
-                        raise ValueError("`save_nf_signal` must be True or False.")
+                        raise ValueError("`save_nf_signal` must be a boolean.")
 
                 if config_file is None:
                         config = PROJECT_ROOT.parent / "config_methods.yml"
                 elif config_file.endswith(".yml") and Path(config_file).is_file():
                         config = config_file
-                
                 else:
-                        raise ValueError("`config_file` must be None or Path to a config file.")
-                        
+                        raise ValueError("`config_file` must be None or a valid YAML file path.")
+
+                # --- Assignments ---
                 self.subject_id = subject_id
                 self.visit = visit
                 self.session = session
@@ -240,184 +195,156 @@ class NFRealtime:
                 set_log_level(verbose)
 
         def connect_to_lsl(
-                                self,
-                                chunk_size=10,
-                                mock_lsl=False,
-                                fname=None,
-                                n_repeat=np.inf,
-                                bufsize_baseline=4,
-                                bufsize_main=3,
-                                acquisition_delay=0.001,
-                                timeout=2
-                                ):
+                self,
+                chunk_size: int = 10,
+                mock_lsl: bool = False,
+                fname: Optional[str] = None,
+                n_repeat: int | float = float("inf"),
+                bufsize_baseline: int = 4,
+                bufsize_main: int = 3,
+                acquisition_delay: float = 0.001,
+                timeout: float = 2.0,
+        ) -> None:
                 """
-                Connect to a Lab Streaming Layer (LSL) stream for EEG data acquisition.
+                Connect to a Lab Streaming Layer (LSL) EEG stream.
 
-                This method sets up a live or mock LSL stream depending on the parameters.
-                It handles stream creation, montage assignment, and metadata initialization.
-                Any existing stream is disconnected before a new connection. For mock streams,
-                a pre-recorded EEG file can be streamed as if it were live data.
+                This method connects to a live or mock LSL stream, sets the montage and
+                metadata, and exposes the stream’s public methods as attributes.
 
                 Parameters
                 ----------
-                chunk_size : int, optional
-                        Number of samples per chunk for streaming. Default is 10.
-                mock_lsl : bool, optional
-                        If True, a pre-recorded EEG file will be streamed instead of connecting to a live LSL stream.
-                        Default is False.
-                fname : str | Path | None, optional
-                        Path to the EEG file used for mock streaming. If None, a sample dataset will be used.
-                        Default is None.
-                n_repeat : int | float, optional
-                        Number of times to repeat the mock recording. Default is np.inf.
-                bufsize_baseline : int, optional
-                        Buffer size to use for 'baseline' sessions. Default is 4.
-                bufsize_main : int, optional
-                        Buffer size to use for 'main' sessions. Default is 3.
-                acquisition_delay : float, optional
-                        Delay in seconds between consecutive LSL acquisition attempts. Default is 0.001.
-                timeout : float, optional
-                        Maximum time in seconds to wait for LSL stream connection. Default is 2.
+                chunk_size : int, default 10
+                        Number of samples per chunk for streaming.
+                mock_lsl : bool, default False
+                        If True, stream a pre-recorded EEG file instead of live LSL data.
+                fname : str | Path | None, default None
+                        Path to the EEG file for mock streaming. Uses sample data if None.
+                n_repeat : int | float, default np.inf
+                        Number of times to repeat the mock recording.
+                bufsize_baseline : int, default 4
+                        Buffer size for 'baseline' sessions.
+                bufsize_main : int, default 3
+                        Buffer size for 'main' sessions.
+                acquisition_delay : float, default 0.001
+                        Delay (s) between consecutive acquisition attempts.
+                timeout : float, default 2.0
+                        Max time (s) to wait for an LSL connection.
 
                 Raises
                 ------
                 FileNotFoundError
                         If `mock_lsl` is True and the specified `fname` does not exist.
                 ConnectionError
-                        If the LSL stream cannot be connected within the timeout period.
-
-                Attributes
-                ----------
-                stream : Stream
-                        The connected LSL stream object.
-                sfreq : float
-                        Sampling frequency of the connected stream.
-                rec_info : dict
-                        Metadata/info dictionary from the connected stream.
-                bufsize : int
-                        Buffer size used for the stream, based on session type.
-                source_id : str
-                        Unique identifier for the LSL stream.
-                subject_dir : Path
-                        Directory created for the current subject.
-
-                Notes
-                -----
-                - Previous streams are disconnected automatically before a new connection.
-                - For mock streams, a `Player` object is automatically started.
-                - Callable attributes of the stream that are not private are copied to `self`.
-
-                Examples
-                --------
-                >>> session.connect_to_lsl(chunk_size=20, mock_lsl=True)
+                        If the LSL stream cannot be connected within `timeout`.
                 """
-
+                # --- Prepare subject directory ---
                 self.subject_dir = Path(self.subjects_dir) / self.subject_id
                 self.subject_dir.mkdir(parents=True, exist_ok=True)
-                
-                ## disconnect the previous streaming if any
-                if hasattr(self, "stream"): 
-                        if self.stream.connected:
-                                self.stream.disconnect()
+
+                # --- Disconnect existing stream if present ---
+                if hasattr(self, "stream") and getattr(self.stream, "connected", False):
+                        self.stream.disconnect()
+
+                # --- Determine file for mock streaming ---
                 if mock_lsl and fname is None:
                         fname = PROJECT_ROOT / "data" / "sample" / "sample_data.vhdr"
 
-                ## get the recording info and create the stream
-                if self.session == "baseline":
-                        self.bufsize = bufsize_baseline
-                if self.session == "main":
-                        self.bufsize = bufsize_main
+                # --- Buffer size based on session ---
+                self.bufsize = bufsize_baseline if self.session == "baseline" else bufsize_main
+
+                # --- Load montage if file path provided ---
                 if Path(self.montage).is_file():
                         self.montage = read_dig_captrak(self.montage)
 
+                # --- Create and connect stream ---
                 self.source_id = uuid.uuid4().hex
                 if mock_lsl:
-                        player = Player(
-                                        fname,
-                                        chunk_size=chunk_size,
-                                        n_repeat=n_repeat,
-                                        source_id=self.source_id
-                                        ).start()
-                        stream = Stream(bufsize=self.bufsize, source_id=self.source_id)
-                        stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
-                        stream.set_montage(self.montage, on_missing="warn")
-                        stream.pick("eeg")
-                        stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
-                        self.stream = stream
-                else:
-                        stream = Stream(
-                                        bufsize=self.bufsize,
-                                        name=None,
-                                        source_id=self.source_id
-                                        )
-                        stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
-                        stream.set_montage(self.montage, on_missing="warn")
-                        stream.pick("eeg")
-                        stream.set_meas_date(datetime.datetime.now().replace(tzinfo=datetime.timezone.utc))
-                        self.stream = stream
-                        
-                self.sfreq = stream.info["sfreq"]  
-                self.rec_info = stream.info     
+                        Player(
+                        fname,
+                        chunk_size=chunk_size,
+                        n_repeat=n_repeat,
+                        source_id=self.source_id,
+                        ).start()
+
+                stream = Stream(bufsize=self.bufsize, source_id=self.source_id)
+                stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
+                stream.set_montage(self.montage, on_missing="warn")
+                stream.pick("eeg")
+                stream.set_meas_date(
+                        datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
+                )
+                self.stream = stream
+
+                # --- Metadata ---
+                self.sfreq = stream.info["sfreq"]
+                self.rec_info = stream.info
                 self.rec_info["subject_info"] = {"his_id": self.subject_id}
 
-                ## copying attributes
-                for attr_name in dir(self.stream):
-                        attr_value = getattr(self.stream, attr_name)
-                        if callable(attr_value) and not attr_name.startswith("__"):
-                                setattr(self, attr_name, attr_value)
+                # --- Expose stream methods as attributes ---
+                for name in dir(self.stream):
+                        if not name.startswith("__"):
+                        attr = getattr(self.stream, name)
+                                if callable(attr):
+                                        setattr(self, name, attr)
         
 
-        def record_baseline(self, baseline_duration, winsize=3):
+        def record_baseline(
+                self,
+                baseline_duration: float,
+                winsize: float = 3.0,
+        ) -> None:
                 """
-                Record a baseline EEG segment to extract features for neurofeedback.
+                Record a baseline EEG segment for neurofeedback feature extraction.
 
-                The method continuously streams data from the LSL connection for the 
-                specified baseline duration. Data is collected in windows of size `winsize`
-                and stored as a Raw object. The raw baseline is saved to disk, and the 
-                inverse operator is computed for the session.
+                Continuously streams data from the LSL connection for the given duration,
+                fetching samples in chunks of length ``winsize`` seconds. The baseline is
+                saved to disk as a Raw FIF file and an inverse operator is computed.
 
                 Parameters
                 ----------
                 baseline_duration : float
                         Desired duration of the baseline recording in seconds.
-                winsize : float, optional
-                        Size of the data window to fetch from the buffer in seconds. The method
-                        will fetch the last `winsize * sfreq` samples from the buffer. If None,
-                        the entire buffer is returned. Default is 3.
+                winsize : float, default 3.0
+                        Size of each data window (seconds) fetched from the buffer.
 
                 Returns
                 -------
                 None
+                        The method saves the baseline data and updates:
+                        * ``self.raw_baseline`` : mne.io.Raw
+                        The recorded baseline as a Raw object.
+                        * Internal inverse operator via ``self.compute_inv_operator()``.
 
                 Notes
                 -----
-                - The baseline data is saved under `subject_dir/baseline/visit_{visit}-raw.fif`.
-                - After recording, `self.raw_baseline` holds the MNE Raw object for the baseline.
-                - The inverse operator is computed after baseline recording and stored internally.
+                - Output file: ``<subject_dir>/baseline/visit_<visit>-raw.fif``.
                 - The LSL stream remains connected after this method completes.
-
-                Examples
-                --------
-                >>> session.record_baseline(baseline_duration=60, winsize=5)
                 """
                 
                 self.baseline_duration = baseline_duration
-                #time.sleep(self.bufsize)
-                print("Recording Initiated ...!")
-                data = [] 
+                print("Recording initiated ...")
+
+                # --- Collect data in windows ---
                 t_start = local_clock()
-                while local_clock() < t_start + self.baseline_duration:
-                        data.append(self.stream.get_data(winsize)[0])
+                chunks: list[np.ndarray] = []
+                while local_clock() < t_start + baseline_duration:
+                        chunks.append(self.stream.get_data(winsize)[0])
                         time.sleep(winsize)
 
-                data = np.concatenate(np.array(data), axis=1)
+                data = np.concatenate(chunks, axis=1)
+
+                # --- Create MNE Raw object and save it ---
                 raw_baseline = RawArray(data, self.rec_info)
-                (self.subject_dir / "baseline").mkdir(parents=True, exist_ok=True)
-                fname_save = self.subject_dir / "baseline" / f"visit_{self.visit}-raw.fif"
+                baseline_dir = Path(self.subject_dir) / "baseline"
+                baseline_dir.mkdir(parents=True, exist_ok=True)
+                fname_save = baseline_dir / f"visit_{self.visit}-raw.fif"
                 raw_baseline.save(fname_save, overwrite=True)
-                
+
                 self.raw_baseline = raw_baseline
-                (self.subject_dir / "inv").mkdir(parents=True, exist_ok=True)
+
+                # --- Compute inverse operator ---
+                inv_dir = Path(self.subject_dir) / "inv"
+                inv_dir.mkdir(parents=True, exist_ok=True)
                 self.compute_inv_operator()
 
         def get_blink_template(self, max_iter=800, method="infomax"):
