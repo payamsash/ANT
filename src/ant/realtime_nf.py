@@ -452,6 +452,7 @@ class NFRealtime:
                         modality_params=None,
                         show_raw_signal=True,
                         show_nf_signal=True,
+                        time_window=10,
                         show_design_viz=True,
                         design_viz="VisualRorschach",
                         use_ring_buffer=False
@@ -548,6 +549,7 @@ class NFRealtime:
                 self._sfreq = self.rec_info["sfreq"]
                 self.show_raw_signal = show_raw_signal
                 self.show_nf_signal = show_nf_signal
+                self.time_window = time_window
                 self.show_design_viz = show_design_viz
                 self.design_viz = design_viz
                 self.use_ring_buffer = use_ring_buffer
@@ -624,7 +626,10 @@ class NFRealtime:
                         self.scale_buttons_minus = []
                         self.shifts = np.arange(0, len(self._mods) * 2, 2)
                         self.plot_widget.setYRange(-1 + self.shifts[0], 1 + self.shifts[-1])
+                        
 
+
+                        ## buttons
                         for i, shift in enumerate(self.shifts):
                                 vb = self.plot_widget.getViewBox()
                                 pos = vb.mapViewToScene(QtCore.QPointF(0, shift))  # returns QPointF
@@ -656,11 +661,10 @@ class NFRealtime:
                                 btn_minus.show()
                                 btn_minus.clicked.connect(lambda checked, idx=i: self.scale_down(idx))
 
-
                         # self.legend = None
                         self.text_items = None
                         self.curve = self.plot_widget.plot(pen='y')
-                        self.time_axis = np.linspace(0, 10, int(self._sfreq)) # show for 10 seconds
+                        self.time_axis = np.linspace(0, self.time_window, int(self._sfreq)) # show for 10 seconds
                         
 
                 if self.show_raw_signal:
