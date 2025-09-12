@@ -24,6 +24,7 @@ import mne
 from mne import Report, read_labels_from_annot, set_log_level
 from mne.channels import get_builtin_montages, read_dig_captrak
 from mne.io import RawArray
+from mne.utils import logger
 from mne.minimum_norm import (
         apply_inverse_raw,
         read_inverse_operator,
@@ -1240,7 +1241,7 @@ class NFRealtime:
                 }
 
 
-        def _individual_peak_power_prep(self):
+        def _individual_peak_power_prep(self) -> dict:
                 """
                 Prepare parameters for the 'individual_peak_power' modality.
 
@@ -1288,7 +1289,7 @@ class NFRealtime:
 
                 return dict(sfreq=self._sfreq, freq_var=2, cf=cf)
 
-        def _entropy_prep(self):
+        def _entropy_prep(self) -> dict:
                 """
                 Prepare parameters for the 'entropy' neural feature modality.
 
@@ -1316,7 +1317,7 @@ class NFRealtime:
                 )
 
 
-        def _source_power_prep(self):
+        def _source_power_prep(self) -> dict:
                 """
                 Prepare parameters for the 'source_power' modality.
 
@@ -1363,7 +1364,7 @@ class NFRealtime:
                         inverse_operator=inverse_operator,
                 )
 
-        def _sensor_connectivity_prep(self):
+        def _sensor_connectivity_prep(self) -> dict:
                 """
                 Prepare parameters for the 'sensor_connectivity' modality.
 
@@ -1405,7 +1406,7 @@ class NFRealtime:
                         method=self.params["method"],
                 )
 
-        def _source_connectivity_prep(self):
+        def _source_connectivity_prep(self) -> dict:
                 """
                 Prepare parameters for the 'source_connectivity' modality.
 
@@ -1456,7 +1457,7 @@ class NFRealtime:
                         freqs=freqs,
                 )
 
-        def _sensor_graph_prep(self):
+        def _sensor_graph_prep(self) -> dict:
                 """
                 Prepare parameters for the 'sensor_graph' modality.
 
@@ -1497,7 +1498,7 @@ class NFRealtime:
                         beta=self.params["beta"],
                 )
 
-        def _source_graph_prep(self):
+        def _source_graph_prep(self) -> dict:
                 """
                 Prepare parameters for the 'source_graph' modality.
 
@@ -1542,119 +1543,142 @@ class NFRealtime:
                         sos=sos,
                 )
 
-
         ## --------------------------- Neural Feature Extraction Methods (main) --------------------------- ##
 
         @timed
-        def _sensor_power(self, data, sfreq, frange, method, relative):
-                """
-                Compute sensor-level power in a given frequency band.
+        def _sensor_power(
+                self,
+                data: np.ndarray,
+                sfreq: float,
+                frange: tuple[float, float],
+                method: str = "welch",
+                relative: bool = False,
+                ) -> float:
+                """Compute mean sensor-level power in a given frequency band.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
                 sfreq : float
-                        Sampling frequency.
-                frange : list or tuple
-                        Frequency range to compute power [fmin, fmax].
-                method : str
-                        Method for power computation: 'fft', 'periodogram', 'welch', or 'multitaper'.
+                        Sampling frequency in Hz.
+                frange : tuple of float
+                        Frequency range of interest (fmin, fmax).
+                method : {'fft', 'periodogram', 'welch', 'multitaper'}
+                        PSD estimation method.
                 relative : bool
-                        If True, return relative power within the frequency band.
+                        If True, return power relative to total broadband power.
 
                 Returns
                 -------
                 float
-                        Mean power across channels in the specified frequency band.
+                        Mean power across channels in the selected band.
                 """
                 if method == "fft":
                         n_channels, n_samples = data.shape
                         n_fft = int(2 ** np.ceil(np.log2(n_samples)))
-                        win = get_window(window="hann", Nx=n_samples, fftbins=True)
+                        win = get_window("hann", n_samples, fftbins=True)
                         data_win = data * win
-                        freqs = np.fft.rfftfreq(n_fft, d=1/sfreq)
-                        psd = (np.abs(np.fft.rfft(data_win, n=n_fft)) ** 2) / (sfreq * np.sum(win**2))
-                
+                        freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
+                        psd = (np.abs(np.fft.rfft(data_win, n=n_fft, axis=1)) ** 2) / (
+                        sfreq * np.sum(win ** 2)
+                        )
                 elif method == "periodogram":
                         freqs, psd = periodogram(data, sfreq, axis=1)
-                
                 elif method == "welch":
-                        print(f"using welch method ...")
+                        logger.info("Estimating PSD using Welch method.")
                         freqs, psd = welch(data, sfreq, axis=1)
-                
                 elif method == "multitaper":
                         psd, freqs = psd_array_multitaper(data, sfreq, axis=1)
+                else:
+                        raise ValueError(f"Unknown method: {method}")
 
-                # Frequency band selection
                 mask = (freqs >= frange[0]) & (freqs <= frange[1])
                 freq_res = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
-                bp = simpson(psd[:, mask], dx=freq_res, axis=1)
+                band_power = simpson(psd[:, mask], dx=freq_res, axis=1)
+
                 if relative:
-                        bp /= simpson(psd, dx=freq_res, axis=1)
-                return bp.mean()
+                        total_power = simpson(psd, dx=freq_res, axis=1)
+                        band_power = band_power / total_power
+
+                return float(band_power.mean())
+
 
         @timed
-        def _argmax_freq(self, data, fft_window, freq_band_mask, freqs_band, ap_model, gaussian):
-                """
-                Compute the individual peak frequency using FFT and a Gaussian fit.
+        def _argmax_freq(
+                self,
+                data: np.ndarray,
+                fft_window: np.ndarray,
+                ap_model: np.ndarray,
+                gaussian: callable,
+                ) -> float:
+                """Estimate the individual peak frequency using FFT and a Gaussian fit.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                fft_window : np.ndarray
-                        Precomputed FFT window.
-                freq_band : np.ndarray
-                        Frequencies corresponding to FFT bins.
-                freq_band_idxs : np.ndarray
-                        Indices of the frequency band of interest.
-                ap_model : np.ndarray
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                fft_window : ndarray
+                        Precomputed FFT window (1-D Hann or similar).
+                ap_model : ndarray, shape (n_freqs,)
                         Estimated aperiodic (1/f) component to subtract.
                 gaussian : callable
-                        Gaussian function to fit the peak.
+                        Gaussian function: f(x, amp, mean, std) -> y.
 
                 Returns
                 -------
                 float
-                        Estimated individual peak frequency. Returns 0 if Gaussian fit fails.
+                        Estimated peak frequency (Hz). Returns 0 if Gaussian fit fails.
                 """
-                data = np.multiply(data, fft_window)
-                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                freqs = np.fft.rfftfreq(data.shape[-1], d=1/self._sfreq)
-                freq_band_mask = (freqs >= self.params["frange"][0]) & (freqs <= self.params["frange"][1])
-                freqs_band = freqs[freq_band_mask]
-                total_power_band = np.mean(np.square(fftval[:, freq_band_mask]), axis=0)
+                data_win = data * fft_window
+                fftval = np.abs(np.fft.rfft(data_win, axis=1) / data.shape[-1])
+                freqs = np.fft.rfftfreq(data.shape[-1], d=1.0 / self._sfreq)
+
+                mask = (freqs >= self.params["frange"][0]) & (freqs <= self.params["frange"][1])
+                freqs_band = freqs[mask]
+
+                total_power_band = np.mean(np.square(fftval[:, mask]), axis=0)
                 periodic_power = total_power_band - ap_model
 
-                p0 = [periodic_power.max(), 10.5, 1.0]
-                
+                # Initial guess: amplitude, frequency of max power, std=1.0
+                p0 = [periodic_power.max(),
+                        freqs_band[np.argmax(periodic_power)],
+                        1.0]
+
                 try:
                         popt, _ = curve_fit(gaussian, freqs_band, periodic_power, p0=p0)
-                        individual_peak = popt[1]
-                        print(f"individual peak : {individual_peak}")
+                        individual_peak = float(popt[1])
+                        logger.info(f"Individual peak frequency: {individual_peak:.2f} Hz")
                 except RuntimeError:
-                        individual_peak = 0 
-                        warn(f"fitting failed and individual peak value is set to 0.")
+                        individual_peak = 0.0
+                        warn("Gaussian fit failed; individual peak set to 0 Hz.", RuntimeWarning)
+
                 return individual_peak
-        
+
+
         @timed
-        def _band_ratio(self, data, sfreq, frange_1, frange_2, method):
-                """
-                Compute the ratio of band power between two frequency bands.
+        def _band_ratio(
+                self,
+                data: np.ndarray,
+                sfreq: float,
+                frange_1: tuple[float, float],
+                frange_2: tuple[float, float],
+                method: str = "welch",
+                ) -> float:
+                """Compute the ratio of band power between two frequency bands.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
                 sfreq : float
-                        Sampling frequency.
-                frange_1 : list or tuple
-                        Frequency range for numerator band [fmin, fmax].
-                frange_2 : list or tuple
-                        Frequency range for denominator band [fmin, fmax].
-                method : str
-                        Method for power computation: 'fft', 'periodogram', 'welch', or 'multitaper'.
+                        Sampling frequency in Hz.
+                frange_1 : tuple of float
+                        Frequency range for numerator band (fmin, fmax).
+                frange_2 : tuple of float
+                        Frequency range for denominator band (fmin, fmax).
+                method : {'fft', 'periodogram', 'welch', 'multitaper'}
+                        PSD estimation method.
 
                 Returns
                 -------
@@ -1664,42 +1688,50 @@ class NFRealtime:
                 if method == "fft":
                         n_channels, n_samples = data.shape
                         n_fft = int(2 ** np.ceil(np.log2(n_samples)))
-                        win = get_window(window="hann", Nx=n_samples, fftbins=True)
+                        win = get_window("hann", n_samples, fftbins=True)
                         data_win = data * win
-                        freqs = np.fft.rfftfreq(n_fft, d=1/sfreq)
-                        psd = (np.abs(np.fft.rfft(data_win, n=n_fft)) ** 2) / (sfreq * np.sum(win**2))
-                
+                        freqs = np.fft.rfftfreq(n_fft, d=1.0 / sfreq)
+                        psd = (np.abs(np.fft.rfft(data_win, n=n_fft, axis=1)) ** 2) / (
+                        sfreq * np.sum(win ** 2)
+                        )
                 elif method == "periodogram":
                         freqs, psd = periodogram(data, sfreq, axis=1)
-                
                 elif method == "welch":
                         freqs, psd = welch(data, sfreq, axis=1)
-                
                 elif method == "multitaper":
                         psd, freqs = psd_array_multitaper(data, sfreq, axis=1)
+                else:
+                        raise ValueError(f"Unknown method: {method}")
 
-                # Frequency band selection
-                mask_1 = (freqs >= frange_1[0]) & (freqs <= frange_1[1])
-                mask_2 = (freqs >= frange_2[0]) & (freqs <= frange_2[1])
+                mask1 = (freqs >= frange_1[0]) & (freqs <= frange_1[1])
+                mask2 = (freqs >= frange_2[0]) & (freqs <= frange_2[1])
                 freq_res = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
 
-                bp_1 = simpson(psd[:, mask_1], dx=freq_res, axis=1)
-                bp_2 = simpson(psd[:, mask_2], dx=freq_res, axis=1)
-                return bp_1.mean() / bp_2.mean()
+                bp1 = simpson(psd[:, mask1], dx=freq_res, axis=1)
+                bp2 = simpson(psd[:, mask2], dx=freq_res, axis=1)
+
+                return float(bp1.mean() / bp2.mean())
 
         @timed
-        def _individual_peak_power(self, data, sfreq, freq_var, cf):
-                """
-                Compute power around the individual peak frequency.
+        def _individual_peak_power(
+                self,
+                data: np.ndarray,
+                sfreq: float,
+                freq_var: float,
+                cf: float,
+                ) -> float:
+                """Compute power around the individual peak frequency.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                fft_window : np.ndarray
-                        Precomputed FFT window to apply on the data.
-                individual_freq_band_idxs : np.ndarray
-                        Indices of the frequency band around the individual peak.
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                sfreq : float
+                        Sampling frequency in Hz.
+                freq_var : float
+                        Half-width of frequency window around the peak frequency.
+                cf : float
+                        Center (peak) frequency.
 
                 Returns
                 -------
@@ -1709,22 +1741,32 @@ class NFRealtime:
                 freqs, psd = welch(data, sfreq, axis=1)
                 mask = (freqs >= cf - freq_var) & (freqs <= cf + freq_var)
                 freq_res = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
-                bp = simpson(psd[:, mask], dx=freq_res, axis=1)
-                print(bp.mean())
+                band_power = simpson(psd[:, mask], dx=freq_res, axis=1)
 
-                return bp.mean()
+                logger.info(f"Individual peak band power: {band_power.mean():.4f}")
+                return float(band_power.mean())
+
 
         @timed
-        def _entropy(self, data, sos, method, psd_method):
-                """
-                Compute entropy of EEG signals.
+        def _entropy(
+                self,
+                data: np.ndarray,
+                sos: np.ndarray,
+                method: str,
+                psd_method: str | None = None,
+                ) -> float:
+                """Compute entropy of EEG signals.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                sos : np.ndarray
-                        Second-order sections of the bandpass filter to apply.
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                sos : ndarray
+                        Second-order sections of the bandpass filter.
+                method : {'AppEn', 'SampEn', 'Spectral', 'SVD'}
+                        Entropy method to use.
+                psd_method : str | None
+                        Method for computing PSD (used for spectral entropy).
 
                 Returns
                 -------
@@ -1732,29 +1774,39 @@ class NFRealtime:
                         Mean entropy value across channels.
                 """
                 data_filt = sosfiltfilt(sos, data)
-                match method:
-                        case "AppEn":
-                                ents = compute_app_entropy(data_filt)
-                        case "SampEn":
-                                ents = compute_samp_entropy(data_filt)
-                        case "Spectral":
-                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=psd_method)
-                        case "SVD":
-                                ents = compute_svd_entropy(data_filt)
-                return ents.mean() - 2
+
+                if method == "AppEn":
+                        ents = compute_app_entropy(data_filt)
+                elif method == "SampEn":
+                        ents = compute_samp_entropy(data_filt)
+                elif method == "Spectral":
+                        ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=psd_method)
+                elif method == "SVD":
+                        ents = compute_svd_entropy(data_filt)
+                else:
+                        raise ValueError(f"Unknown entropy method: {method}")
+
+                return float(ents.mean() - 2)
+
 
         @timed
-        def _source_power(self, data, fft_window, freq_band_idxs, brain_label, inverse_operator):
-                """
-                Compute source-level power for a specific brain label.
+        def _source_power(
+                self,
+                data: np.ndarray,
+                fft_window: np.ndarray,
+                freq_band_idxs: np.ndarray,
+                brain_label,
+                inverse_operator,
+                ) -> float:
+                """Compute source-level power for a specific brain label.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                fft_window : np.ndarray
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                fft_window : ndarray
                         Precomputed FFT window.
-                freq_band_idxs : np.ndarray
+                freq_band_idxs : ndarray
                         Indices of the frequency band of interest.
                 brain_label : mne.Label
                         Label of the brain region to extract source activity from.
@@ -1768,33 +1820,51 @@ class NFRealtime:
                 """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
-                
-                ## compute source activation and then power
+
                 stc_data = apply_inverse_raw(
-                                                raw_data,
-                                                inverse_operator,
-                                                lambda2=1.0 / 9,
-                                                pick_ori="normal",
-                                                label=brain_label,
-                                                ).data
-                stc_data = np.multiply(stc_data, fft_window)
-                fftval = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
-                stc_power = np.average(np.square(fftval[:, freq_band_idxs]).T)
-                return stc_power
+                        raw_data,
+                        inverse_operator,
+                        lambda2=1.0 / 9,
+                        pick_ori="normal",
+                        label=brain_label,
+                ).data
+
+                stc_data *= fft_window
+                fft_val = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
+                power = np.mean(np.square(fft_val[:, freq_band_idxs]))
+
+                return float(power)
+
 
         @timed
-        def _sensor_connectivity(self, data, indices, freqs, fmin, fmax, mode, method):
-                """
-                Compute sensor-level connectivity between channel pairs.
+        def _sensor_connectivity(
+                self,
+                data: np.ndarray,
+                indices: tuple[np.ndarray, ...],
+                freqs: np.ndarray,
+                fmin: float,
+                fmax: float,
+                mode: str,
+                method: str,
+                ) -> float:
+                """Compute sensor-level connectivity between channel pairs.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                indices : tuple
-                        Pairs of channel indices for connectivity calculation.
-                freqs : np.ndarray
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                indices : tuple of arrays
+                        Channel index pairs for connectivity computation.
+                freqs : ndarray
                         Frequencies at which to compute connectivity.
+                fmin : float
+                        Minimum frequency of interest.
+                fmax : float
+                        Maximum frequency of interest.
+                mode : str
+                        Connectivity mode (e.g., 'coh', 'pli').
+                method : str
+                        Method to compute connectivity (e.g., 'multitaper').
 
                 Returns
                 -------
@@ -1802,35 +1872,41 @@ class NFRealtime:
                         Mean connectivity across selected channel pairs.
                 """
                 con = spectral_connectivity_time(
-                                                data=data[np.newaxis,:],
-                                                freqs=freqs,
-                                                indices=indices,
-                                                average=False,
-                                                sfreq=self._sfreq, 
-                                                fmin=fmin,
-                                                fmax=fmax,  
-                                                faverage=True,
-                                                mode=mode, 
-                                                method=method, 
-                                                n_cycles=5
-                                                )
-                con_data = np.squeeze(con.get_data(output='dense'))[indices].mean()
-                return con_data
+                        data=data[np.newaxis, :],
+                        freqs=freqs,
+                        indices=indices,
+                        average=False,
+                        sfreq=self._sfreq,
+                        fmin=fmin,
+                        fmax=fmax,
+                        faverage=True,
+                        mode=mode,
+                        method=method,
+                        n_cycles=5,
+                )
+
+                con_data = np.squeeze(con.get_data(output="dense"))[indices].mean()
+                return float(con_data)
 
         @timed
-        def _source_connectivity(self, data, merged_label, inverse_operator, freqs):
-                """
-                Compute source-level connectivity between two brain regions.
+        def _source_connectivity(
+                self,
+                data: np.ndarray,
+                merged_label,
+                inverse_operator,
+                freqs: np.ndarray,
+                ) -> float:
+                """Compute source-level connectivity between two brain regions.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
                 merged_label : mne.Label
                         Merged label covering the two brain regions of interest.
                 inverse_operator : mne.minimum_norm.InverseOperator
                         Inverse operator for source reconstruction.
-                freqs : np.ndarray
+                freqs : ndarray
                         Frequencies at which to compute connectivity.
 
                 Returns
@@ -1840,45 +1916,62 @@ class NFRealtime:
                 """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
+
                 stcs = apply_inverse_raw(
-                                        raw_data,
-                                        inverse_operator,
-                                        lambda2=1.0 / 9,
-                                        pick_ori="normal",
-                                        label=merged_label
-                                        )
+                        raw_data,
+                        inverse_operator,
+                        lambda2=1.0 / 9,
+                        pick_ori="normal",
+                        label=merged_label,
+                )
+
                 stc_lh_data = stcs.lh_data.mean(axis=0)
                 stc_rh_data = stcs.rh_data.mean(axis=0)
-                
+
                 con = spectral_connectivity_time(
-                                                data=np.array([[stc_lh_data, stc_rh_data]]),
-                                                freqs=freqs,
-                                                indices=None,
-                                                average=False,
-                                                sfreq=self._sfreq,
-                                                fmin=self.params["frange"][0],
-                                                fmax=self.params["frange"][1],
-                                                faverage=True,
-                                                mode=self.params["mode"],
-                                                method=self.params["method"],
-                                                n_cycles=5
-                                                )
-                con_data = np.squeeze(con.get_data(output='dense'))[1][0]
+                        data=np.array([[stc_lh_data, stc_rh_data]]),
+                        freqs=freqs,
+                        indices=None,
+                        average=False,
+                        sfreq=self._sfreq,
+                        fmin=self.params["frange"][0],
+                        fmax=self.params["frange"][1],
+                        faverage=True,
+                        mode=self.params["mode"],
+                        method=self.params["method"],
+                        n_cycles=5,
+                )
+
+                con_data = float(np.squeeze(con.get_data(output="dense"))[1][0])
                 return con_data
 
+
         @timed
-        def _sensor_graph(self, data, indices, sos, dist_type, alpha, beta):
-                """
-                Compute graph-theoretical metrics from sensor-level EEG data.
+        def _sensor_graph(
+                self,
+                data: np.ndarray,
+                indices: tuple[np.ndarray, ...],
+                sos: np.ndarray,
+                dist_type: str,
+                alpha: float,
+                beta: float,
+                ) -> float:
+                """Compute graph-theoretical metrics from sensor-level EEG data.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
-                indices : tuple
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
+                indices : tuple of arrays
                         Pairs of channel indices to compute graph edges.
-                sos : np.ndarray
+                sos : ndarray
                         Second-order sections of Butterworth bandpass filter.
+                dist_type : str
+                        Distance metric for graph computation.
+                alpha : float
+                        Alpha parameter for graph computation.
+                beta : float
+                        Beta parameter for graph computation.
 
                 Returns
                 -------
@@ -1886,31 +1979,33 @@ class NFRealtime:
                         Average edge value of the computed graph across selected channel pairs.
                 """
                 data_filt = sosfiltfilt(sos, data)
-                graph_matrix = log_degree_barrier(
-                                                data_filt,
-                                                dist_type=dist_type, 
-                                                alpha=alpha, 
-                                                beta=beta, 
-                                                )
-                avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean() - 0.025
-                return avg_edge
-        
+                graph_matrix = log_degree_barrier(data_filt, dist_type=dist_type, alpha=alpha, beta=beta)
+                avg_edge = np.mean([graph_matrix[idxs] for idxs in indices]) - 0.025
+                return float(avg_edge)
+
+
         @timed
-        def _source_graph(self, data, bls, bl_idxs, inverse_operator, sos):
-                """
-                Compute graph-theoretical metrics from source-level EEG data.
+        def _source_graph(
+                self,
+                data: np.ndarray,
+                bls: list,
+                bl_idxs: tuple[int, int],
+                inverse_operator,
+                sos: np.ndarray,
+                ) -> float:
+                """Compute graph-theoretical metrics from source-level EEG data.
 
                 Parameters
                 ----------
-                data : np.ndarray
-                        EEG data array (channels x samples).
+                data : ndarray, shape (n_channels, n_samples)
+                        EEG data.
                 bls : list of mne.Label
                         Labels of brain regions used to extract time courses.
                 bl_idxs : tuple of int
                         Indices of the brain labels to compute the graph edge between.
                 inverse_operator : mne.minimum_norm.InverseOperator
                         Inverse operator for source reconstruction.
-                sos : np.ndarray
+                sos : ndarray
                         Second-order sections of Butterworth bandpass filter.
 
                 Returns
@@ -1920,24 +2015,28 @@ class NFRealtime:
                 """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
+
                 stcs = apply_inverse_raw(
-                                        raw_data,
-                                        inverse_operator,
-                                        lambda2=1 / 9.0, 
-                                        pick_ori="normal"
-                                        )
+                        raw_data,
+                        inverse_operator,
+                        lambda2=1 / 9.0,
+                        pick_ori="normal",
+                )
+
                 tcs = stcs.extract_label_time_course(
-                                                        bls,
-                                                        src=inverse_operator["src"],
-                                                        mode='mean_flip',
-                                                        allow_empty=True
-                                                )
+                        bls,
+                        src=inverse_operator["src"],
+                        mode="mean_flip",
+                        allow_empty=True,
+                )
+
                 tcs_filt = sosfiltfilt(sos, tcs)
                 graph_matrix = log_degree_barrier(
-                                                tcs_filt,
-                                                dist_type=self.params["dist_type"],
-                                                alpha=self.params["alpha"],
-                                                beta=self.params["beta"]
-                                                )
-                avg_edge = graph_matrix[bl_idxs[0]][bl_idxs[1]]
+                        tcs_filt,
+                        dist_type=self.params["dist_type"],
+                        alpha=self.params["alpha"],
+                        beta=self.params["beta"],
+                )
+
+                avg_edge = float(graph_matrix[bl_idxs[0], bl_idxs[1]])
                 return avg_edge
