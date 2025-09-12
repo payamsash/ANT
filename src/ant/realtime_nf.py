@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 from warnings import warn
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -452,7 +453,8 @@ class NFRealtime:
                         show_raw_signal=True,
                         show_nf_signal=True,
                         show_design_viz=True,
-                        design_viz="VisualRorschach"
+                        design_viz="VisualRorschach",
+                        use_ring_buffer=False
                         ):
                 """
                 Record EEG data and extract neural features for neurofeedback.
@@ -548,17 +550,17 @@ class NFRealtime:
                 self.show_nf_signal = show_nf_signal
                 self.show_design_viz = show_design_viz
                 self.design_viz = design_viz
+                self.use_ring_buffer = use_ring_buffer
 
                 ######## If you don't want to use ring buffer ...
-                # # fetch_secs can be tuned; larger => fewer LSL calls, but larger latency for new info
-                # fetch_secs = max(self.winsize * 4, 2.0)      # fetch at least 2s or 4x winsize
-                # fetch_size_s = int(fetch_secs * self._sfreq)  # samples fetched per LSL call
-                # # hop between consecutive processed windows (50% overlap by default)
-                # hop_samples = max(self.window_size_s // 2, 1)
-                # n_ch = len(self.rec_info["ch_names"])
-                # ring_buffer = np.zeros((n_ch, 0), dtype=np.float32)
-                # last_plot_time = 0.0
-                # plot_interval = 0.05  # seconds between UI updates (tweak to taste)
+                if self.use_ring_buffer:
+                        fetch_secs = max(self.winsize * 4, 2.0)      
+                        fetch_size_s = int(fetch_secs * self._sfreq)  
+                        hop_samples = max(self.window_size_s // 2, 1)
+                        n_ch = len(self.rec_info["ch_names"])
+                        ring_buffer = np.zeros((n_ch, 0), dtype=np.float32)
+                        last_plot_time = 0.0
+                        plot_interval = 0.05  # seconds between UI updates (tweak to taste)
 
                 if self.artifact_correction == "lms":
                         ref_ch_idx = self.rec_info["ch_names"].index(self.ref_channel)
@@ -571,6 +573,7 @@ class NFRealtime:
                 else:
                         mods = modality
                 self._mods = mods
+                self.executor = ThreadPoolExecutor(max_workers=len(self._mods))
 
                 precomps, nf_mods = [], []
                 for modality in mods:
@@ -605,14 +608,14 @@ class NFRealtime:
                         self.axis_color = pg.getConfigOption("foreground")
                         self.colors_list = ["#5DA5A4", "#9A7DFF", "#FFB085", "#8FBF87", "#D98BA3", "#E0C368"]
                         self.scales_dict = {
-                                                "sensor_power": 7e-13,
-                                                "band_ratio": 1.5,
+                                                "sensor_power": 1e-12,
+                                                "band_ratio": 4,
                                                 "source_power": 3e-2,
                                                 "sensor_connectivity": 1,
                                                 "source_connectivity": 1,
                                                 "sensor_graph": 0.05, 
                                                 "source_graph": 2e-17, 
-                                                "entropy": 0.45,
+                                                "entropy": 15,
                                                 "argmax_freq": 8,
                                                 "individual_peak_power": 1
                                                 }
@@ -629,17 +632,27 @@ class NFRealtime:
 
                                 # Plus button
                                 btn_plus = QPushButton("+", self.plot_widget)
-                                btn_plus.setStyleSheet(f"color: {self.axis_color}; font-weight: bold;")
-                                btn_plus.resize(20, 20)
-                                btn_plus.move(10, int(py) - 10)  # center button vertically
+                                btn_plus.setStyleSheet(f"""
+                                                        color: grey;       /* text color */
+                                                        background-color: transparent;  /* make background invisible */
+                                                        border: none;                   /* remove button border */
+                                                        font-weight: bold;
+                                                        """)
+                                btn_plus.resize(25, 25)
+                                btn_plus.move(int(px) - 20, int(py) + 10)  # center button vertically
                                 btn_plus.show()
                                 btn_plus.clicked.connect(lambda checked, idx=i: self.scale_up(idx))
 
                                 # Minus button
                                 btn_minus = QPushButton("-", self.plot_widget)
-                                btn_minus.setStyleSheet(f"color: {self.axis_color}; font-weight: bold;")
-                                btn_minus.resize(20, 20)
-                                btn_minus.move(40, int(py) - 10)
+                                btn_minus.setStyleSheet(f"""
+                                                        color: grey;       /* text color */
+                                                        background-color: transparent;  /* make background invisible */
+                                                        border: none;                   /* remove button border */
+                                                        font-weight: bold;
+                                                        """)
+                                btn_minus.resize(25, 25)
+                                btn_minus.move(int(px) + 10, int(py) + 10)
                                 btn_minus.show()
                                 btn_minus.clicked.connect(lambda checked, idx=i: self.scale_down(idx))
 
@@ -662,123 +675,137 @@ class NFRealtime:
                 t_start = local_clock()
 
                 ######## If you don't want to use ring buffer ...
-                while local_clock() < t_start + self.duration:
-                        tic = time.time()
+                if not self.use_ring_buffer:
+                        while local_clock() < t_start + self.duration:
+                                tic = time.time()
 
-                        ## get data
-                        data = self.stream.get_data(self.winsize, picks=self.picks)[0] # n_chs * n_times
-                        if estimate_delays:
-                                acq_delays.append(time.time() - tic)
-                        if data.shape[1] != self.window_size_s: continue
-
-                        ## add artifact correction
-                        if self.artifact_correction == "lms":
-                                art_tic = time.time()
-                                data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
-                                artifact_delays.append(time.time() - art_tic)
-                        
-                        if self.artifact_correction == "orica":
-                                art_tic = time.time()
-                                sources = self.orica.transform(data)
-                                blink_idx, corrs = self.orica.find_blink_ic(self.blink_template, threshold=0.4)
-                                # print(f"blink_idx and corr: {blink_idx}, {corrs}")
-                                sources_clean = sources.copy()
-                                if blink_idx:
-                                        print(blink_idx)
-                                        for idx in blink_idx:
-                                                sources_clean[idx, :] = 0.0
-                                        data = self.orica.inverse_transform(sources_clean)
-                                artifact_delays.append(time.time() - art_tic)
-
-                        ## compute nf
-                        for idx, mod in enumerate(mods):
-                                nf_data_, method_delay = nf_mods[idx](data, **precomps[idx])
-                                nf_data[mod].append(nf_data_)
+                                ## get data
+                                data = self.stream.get_data(self.winsize, picks=self.picks)[0] # n_chs * n_times
                                 if estimate_delays:
-                                        method_delays[mod].append(method_delay)
+                                        acq_delays.append(time.time() - tic)
+                                if data.shape[1] != self.window_size_s: continue
 
-                        ## QT signal vizualisation
-                        if self.show_nf_signal:
-                                plot_tic = time.time()
-                                last_vals = [nf_data[key][-1] for key in mods]
-                                self.update_nf_plot(last_vals, labels=mods)
-                                self.app.processEvents()
-                                if estimate_delays:
-                                        plot_delays.append(time.time() - plot_tic)
-                                time.sleep(0.005)
+                                ## add artifact correction
+                                if self.artifact_correction == "lms":
+                                        art_tic = time.time()
+                                        data = remove_blinks_lms(data, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                                        artifact_delays.append(time.time() - art_tic)
+                                
+                                if self.artifact_correction == "orica":
+                                        art_tic = time.time()
+                                        sources = self.orica.transform(data)
+                                        blink_idx, corrs = self.orica.find_blink_ic(self.blink_template, threshold=0.4)
+                                        # print(f"blink_idx and corr: {blink_idx}, {corrs}")
+                                        sources_clean = sources.copy()
+                                        if blink_idx:
+                                                print(blink_idx)
+                                                for idx in blink_idx:
+                                                        sources_clean[idx, :] = 0.0
+                                                data = self.orica.inverse_transform(sources_clean)
+                                        artifact_delays.append(time.time() - art_tic)
 
-                        ## Py5 visualization
-                        if self.show_design_viz:
-                                plot_design(nf_data_)
+                                ## compute nf
+                                # for idx, mod in enumerate(mods):
+                                #         nf_data_, method_delay = nf_mods[idx](data, **precomps[idx])
+                                #         nf_data[mod].append(nf_data_)
+                                #         if estimate_delays:
+                                #                 method_delays[mod].append(method_delay)
+
+                                ## compute nf threaded
+                                futures = []
+                                for idx, mod in enumerate(mods):
+                                        futures.append(self.executor.submit(nf_mods[idx], data, **precomps[idx]))
+
+                                # collect results
+                                for mod, future in zip(mods, futures):
+                                        nf_data_, method_delay = future.result()
+                                        nf_data[mod].append(nf_data_)
+                                        if estimate_delays:
+                                                method_delays[mod].append(method_delay)
+
+                                ## QT signal vizualisation
+                                if self.show_nf_signal:
+                                        plot_tic = time.time()
+                                        last_vals = [nf_data[key][-1] for key in mods]
+                                        self.update_nf_plot(last_vals, labels=mods)
+                                        self.app.processEvents()
+                                        if estimate_delays:
+                                                plot_delays.append(time.time() - plot_tic)
+                                        time.sleep(0.005)
+
+                                ## Py5 visualization
+                                if self.show_design_viz:
+                                        plot_design(nf_data_)
 
                 ######## If you want to use ring buffer ...
-                # while local_clock() < t_start + self.duration:
-                #         fetch_tic = time.time()
-                #         fetched = self.stream.get_data(fetch_secs, picks=self.picks)[0]  # shape: n_ch x n_samples
-                #         acq_delay = time.time() - fetch_tic
-                #         if estimate_delays:
-                #                 acq_delays.append(acq_delay)
-                        
-                #         if fetched is None or fetched.size == 0:
-                #                 time.sleep(0.001)
-                #                 continue
+                if self.use_ring_buffer:
+                        while local_clock() < t_start + self.duration:
+                                fetch_tic = time.time()
+                                fetched = self.stream.get_data(fetch_secs, picks=self.picks)[0]  # shape: n_ch x n_samples
+                                acq_delay = time.time() - fetch_tic
+                                if estimate_delays:
+                                        acq_delays.append(acq_delay)
+                                
+                                if fetched is None or fetched.size == 0:
+                                        time.sleep(0.001)
+                                        continue
 
-                #         ring_buffer = np.concatenate((ring_buffer, fetched), axis=1)
-                #         max_buf_len = fetch_size_s + self.window_size_s
-                #         if ring_buffer.shape[1] > max_buf_len:
-                #                 ring_buffer = ring_buffer[:, -max_buf_len:]
+                                ring_buffer = np.concatenate((ring_buffer, fetched), axis=1)
+                                max_buf_len = fetch_size_s + self.window_size_s
+                                if ring_buffer.shape[1] > max_buf_len:
+                                        ring_buffer = ring_buffer[:, -max_buf_len:]
 
-                #         while ring_buffer.shape[1] >= self.window_size_s:
-                #                 window = ring_buffer[:, :self.window_size_s].copy()  # shape n_ch x window_size_s
+                                while ring_buffer.shape[1] >= self.window_size_s:
+                                        window = ring_buffer[:, :self.window_size_s].copy()  # shape n_ch x window_size_s
 
-                #                 ## add artifact correction
-                #                 if self.artifact_correction is not None:
-                #                         art_tic = time.time()
-                #                         if self.artifact_correction == "lms":
-                #                                 window = remove_blinks_lms(window, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
-                                        
-                #                         elif self.artifact_correction == "orica":
-                #                                 sources = self.orica.transform(window)
-                #                                 blink_score = np.abs(np.dot(
-                #                                                         sources.T, self.blink_template) /
-                #                                                         (np.linalg.norm(sources, axis=1) * \
-                #                                                         np.linalg.norm(self.blink_template) + 1e-12))
-                #                                 blink_idx = np.argmax(blink_score)
-                #                                 if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
-                #                                         sources[blink_idx, :] = 0
-                #                                 #data = self.orica.inverse_transform(sources)
-                #                                 window = self.orica.inverse_transform(sources)
-                #                         if estimate_delays:
-                #                                 artifact_delays.append(time.time() - art_tic)
+                                        ## add artifact correction
+                                        if self.artifact_correction is not None:
+                                                art_tic = time.time()
+                                                if self.artifact_correction == "lms":
+                                                        window = remove_blinks_lms(window, ref_ch_idx=ref_ch_idx, n_taps=5, mu=0.01)
+                                                
+                                                elif self.artifact_correction == "orica":
+                                                        sources = self.orica.transform(window)
+                                                        blink_score = np.abs(np.dot(
+                                                                                sources.T, self.blink_template) /
+                                                                                (np.linalg.norm(sources, axis=1) * \
+                                                                                np.linalg.norm(self.blink_template) + 1e-12))
+                                                        blink_idx = np.argmax(blink_score)
+                                                        if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
+                                                                sources[blink_idx, :] = 0
+                                                        #data = self.orica.inverse_transform(sources)
+                                                        window = self.orica.inverse_transform(sources)
+                                                if estimate_delays:
+                                                        artifact_delays.append(time.time() - art_tic)
 
-                #                 ## compute nf
-                #                 for idx, mod in enumerate(mods):
-                #                         meth_tic = time.time()
-                #                         nf_data_, method_delay = nf_mods[idx](window, **precomps[idx])
-                #                         nf_data[mod].append(nf_data_)
-                #                         if estimate_delays:
-                #                                 method_delays[mod].append({
-                #                                                         "measured": time.time() - meth_tic,
-                #                                                         "reported": method_delay
-                #                                                         })
+                                        ## compute nf
+                                        for idx, mod in enumerate(mods):
+                                                meth_tic = time.time()
+                                                nf_data_, method_delay = nf_mods[idx](window, **precomps[idx])
+                                                nf_data[mod].append(nf_data_)
+                                                if estimate_delays:
+                                                        method_delays[mod].append({
+                                                                                "measured": time.time() - meth_tic,
+                                                                                "reported": method_delay
+                                                                                })
 
-                #                 ## QT signal vizualisation
-                #                 if self.show_nf_signal:
-                #                         now = time.time()
-                #                         if (now - last_plot_time) >= plot_interval:
-                #                                 plot_tic = time.time()
-                #                                 last_vals = [nf_data[key][-1] for key in mods]
-                #                                 self.update_nf_plot(last_vals, labels=mods)
-                #                                 self.app.processEvents()
-                #                                 if estimate_delays:
-                #                                         plot_delays.append(time.time() - plot_tic)
-                #                                 last_plot_time = now
+                                        ## QT signal vizualisation
+                                        if self.show_nf_signal:
+                                                now = time.time()
+                                                if (now - last_plot_time) >= plot_interval:
+                                                        plot_tic = time.time()
+                                                        last_vals = [nf_data[key][-1] for key in mods]
+                                                        self.update_nf_plot(last_vals, labels=mods)
+                                                        self.app.processEvents()
+                                                        if estimate_delays:
+                                                                plot_delays.append(time.time() - plot_tic)
+                                                        last_plot_time = now
 
-                #                 ## Py5 visualization
-                #                 if self.show_design_viz:
-                #                         plot_design(nf_data_)
+                                        ## Py5 visualization
+                                        if self.show_design_viz:
+                                                plot_design(nf_data_)
 
-                #                 ring_buffer = ring_buffer[:, hop_samples:]
+                                        ring_buffer = ring_buffer[:, hop_samples:]
 
 
                 self.nf_data = nf_data
@@ -885,10 +912,13 @@ class NFRealtime:
                 scales = [self.scales_dict[k] for k in self._mods]
                 norm_vals = []
                 for val, scale, shift, ch_scale in zip(new_vals, scales, self.shifts, self.channel_scales):
-                        norm = ((val / scale) * ch_scale) + shift
+                        print(ch_scale)
+                        norm = shift + ((val / scale) * ch_scale)
+                        if ch_scale == 2:
+                                norm -= 0.5
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
-                # print(norm_vals)
+                print(norm_vals)
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
