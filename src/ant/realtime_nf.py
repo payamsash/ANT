@@ -577,14 +577,18 @@ class NFRealtime:
                 self._mods = mods
                 self.executor = ThreadPoolExecutor(max_workers=len(self._mods))
 
+                self.mod_params_dict = {}
+                for mod in self._mods:
+                        self.mod_params_dict[mod] = get_params(self.config_file, mod, self.modality_params)
+
                 precomps, nf_mods = [], []
-                for modality in mods:
-                        self.params = get_params(self.config_file, modality, self.modality_params)
+                for modality in self._mods:
+                        self.params = self.mod_params_dict[modality]
                         nf_mod_prep = getattr(self, f"_{modality}_prep", None)
                         nf_mod = getattr(self, f"_{modality}", None)
                         if not callable(nf_mod):
                                 raise NotImplementedError(f"{modality} modality not implemented yet.")
-                        if "source" in self.modality:
+                        if "source" in modality:
                                 assert self.picks is None, "picks should be None for source methods." 
                         precomp = nf_mod_prep()
 
@@ -735,7 +739,7 @@ class NFRealtime:
                                         self.app.processEvents()
                                         if estimate_delays:
                                                 plot_delays.append(time.time() - plot_tic)
-                                        time.sleep(0.005)
+                                        time.sleep(0.001)
 
                                 ## Py5 visualization
                                 if self.show_design_viz:
@@ -916,13 +920,11 @@ class NFRealtime:
                 scales = [self.scales_dict[k] for k in self._mods]
                 norm_vals = []
                 for val, scale, shift, ch_scale in zip(new_vals, scales, self.shifts, self.channel_scales):
-                        print(ch_scale)
                         norm = shift + ((val / scale) * ch_scale)
                         if ch_scale == 2:
                                 norm -= 0.5
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
-                print(norm_vals)
                 
                 # Initialize plot_data and curves on first call
                 if not hasattr(self, "plot_data"):
@@ -933,11 +935,6 @@ class NFRealtime:
                                 pen = colors[lb % len(colors)]
                                 curve = self.plot_widget.plot(self.time_axis, self.plot_data[lb, :], pen=pen, name=labels[lb])
                                 self.curves.append(curve)
-                        
-                        # if self.legend is None:
-                                # self.legend = self.plot_widget.addLegend()
-                                # self.legend.setLabelTextSize('14pt')
-                                # self.legend.anchor(itemPos=(0,0), parentPos=(0,0))
 
                         if self.text_items is None:
                                 self.text_items = []
@@ -1320,7 +1317,11 @@ class NFRealtime:
                                         self._sfreq,
                                         order=5
                                         )
-                precomp = {"sos": sos}
+                precomp = {
+                                "sos": sos,
+                                "method": self.params["method"],
+                                "psd_method": self.params["psd_method"]
+                                }
                 return precomp
 
         def _source_power_prep(self):
@@ -1382,7 +1383,11 @@ class NFRealtime:
                 freqs = np.linspace(self.params["frange"][0], self.params["frange"][1], freq_res)
                 precomp = {
                                 "indices": indices,
-                                "freqs": freqs
+                                "freqs": freqs,
+                                "fmin": self.params["frange"][0],   
+                                "fmax": self.params["frange"][1],
+                                "mode": self.params["mode"],
+                                "method": self.params["method"]
                         }
                 return precomp
 
@@ -1449,7 +1454,13 @@ class NFRealtime:
                                         self._sfreq,
                                         order=5
                                         )
-                precomp = {"indices": indices, "sos": sos}
+                precomp = {
+                                "indices": indices,
+                                "sos": sos,
+                                "dist_type": self.params["dist_type"],
+                                "alpha": self.params["alpha"],
+                                "beta": self.params["beta"]
+                                }
                 return precomp
 
         def _source_graph_prep(self):
@@ -1657,7 +1668,7 @@ class NFRealtime:
                 return power
 
         @timed
-        def _entropy(self, data, sos):
+        def _entropy(self, data, sos, method, psd_method):
                 """
                 Compute entropy of EEG signals.
 
@@ -1674,13 +1685,13 @@ class NFRealtime:
                         Mean entropy value across channels.
                 """
                 data_filt = sosfiltfilt(sos, data)
-                match self.params["method"]:
+                match method:
                         case "AppEn":
                                 ents = compute_app_entropy(data_filt)
                         case "SampEn":
                                 ents = compute_samp_entropy(data_filt)
                         case "Spectral":
-                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=self.params["psd_method"])
+                                ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=psd_method)
                         case "SVD":
                                 ents = compute_svd_entropy(data_filt)
                 return ents.mean()
@@ -1725,7 +1736,7 @@ class NFRealtime:
                 return stc_power
 
         @timed
-        def _sensor_connectivity(self, data, indices, freqs):
+        def _sensor_connectivity(self, data, indices, freqs, fmin, fmax, mode, method):
                 """
                 Compute sensor-level connectivity between channel pairs.
 
@@ -1749,11 +1760,11 @@ class NFRealtime:
                                                 indices=indices,
                                                 average=False,
                                                 sfreq=self._sfreq, 
-                                                fmin=self.params["frange"][0],
-                                                fmax=self.params["frange"][1], 
+                                                fmin=fmin,
+                                                fmax=fmax,  
                                                 faverage=True,
-                                                mode=self.params["mode"],
-                                                method=self.params["method"],
+                                                mode=mode, 
+                                                method=method, 
                                                 n_cycles=5
                                                 )
                 con_data = np.squeeze(con.get_data(output='dense'))[indices].mean()
@@ -1809,7 +1820,7 @@ class NFRealtime:
                 return con_data
 
         @timed
-        def _sensor_graph(self, data, indices, sos):
+        def _sensor_graph(self, data, indices, sos, dist_type, alpha, beta):
                 """
                 Compute graph-theoretical metrics from sensor-level EEG data.
 
@@ -1830,9 +1841,9 @@ class NFRealtime:
                 data_filt = sosfiltfilt(sos, data)
                 graph_matrix = log_degree_barrier(
                                                 data_filt,
-                                                dist_type=self.params["dist_type"],
-                                                alpha=self.params["alpha"],
-                                                beta=self.params["beta"]
+                                                dist_type=dist_type, 
+                                                alpha=alpha, 
+                                                beta=beta, 
                                                 )
                 avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean()
                 return avg_edge
