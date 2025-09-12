@@ -608,7 +608,7 @@ class NFRealtime:
                         self.plot_widget.showGrid(x=True, y=True)
                         self.plot_widget.setLabel('bottom', 'Time', units='s')
                         self.plot_widget.setLabel('left', 'NF Signals')
-                        self.plot_widget.resize(1000, 500)
+                        self.plot_widget.resize(1500, 900)
                         self.plot_widget.showGrid(x=True, y=True)
                         self.plot_widget.show()
                         self.axis_color = pg.getConfigOption("foreground")
@@ -621,9 +621,9 @@ class NFRealtime:
                                                 "source_connectivity": 1,
                                                 "sensor_graph": 0.05, 
                                                 "source_graph": 2e-17, 
-                                                "entropy": 15,
+                                                "entropy": 3,
                                                 "argmax_freq": 8,
-                                                "individual_peak_power": 1
+                                                "individual_peak_power": 3e-12
                                                 }
                         self.channel_scales = [1.0] * len(self._mods)
                         self.scale_buttons_plus = []
@@ -781,7 +781,6 @@ class NFRealtime:
                                                         blink_idx = np.argmax(blink_score)
                                                         if blink_score[blink_idx] > 0.7:  # threshold of blink correlation
                                                                 sources[blink_idx, :] = 0
-                                                        #data = self.orica.inverse_transform(sources)
                                                         window = self.orica.inverse_transform(sources)
                                                 if estimate_delays:
                                                         artifact_delays.append(time.time() - art_tic)
@@ -921,8 +920,6 @@ class NFRealtime:
                 norm_vals = []
                 for val, scale, shift, ch_scale in zip(new_vals, scales, self.shifts, self.channel_scales):
                         norm = shift + ((val / scale) * ch_scale)
-                        if ch_scale == 2:
-                                norm -= 0.5
                         norm_vals.append(norm)
                 norm_vals = np.array(norm_vals)
                 
@@ -1277,27 +1274,19 @@ class NFRealtime:
                                                                 picks=self.picks,
                                                                 method=self.params["method"]
                                                                 )
-                peak_params = [peak_param[0] for peak_param in peak_params_ if self.params["frange"][0] < peak_param[0] < self.params["frange"][1]]
-                
+                peak_params = [peak_param[0] for peak_param in peak_params_ if self.params["frange"][0] < peak_param[0] < self.params["frange"][1]]                
                 if len(peak_params) == 1:
                         cf = peak_params[0]
                 else:
                         cf = (self.params["frange"][0] + self.params["frange"][1]) / 2
                         warn(f"center frequency was set to the middle frequency in the selected frequency range.")
                 
-                ## compute power in a small range around individual peak
-                fft_window, _, _, frequencies = compute_fft(
-                                                                sfreq=self._sfreq,
-                                                                winsize=self.winsize,
-                                                                freq_range=self.params["frange"],
-                                                                freq_res=1
-                                                                )
-                freq_var = 1
-                individual_freq_band_idxs = np.where(np.logical_and(cf - freq_var <= frequencies,
-                                                        frequencies <= cf + freq_var))[0]
+                # Frequency band selection
+                freq_var = 2
                 precomp = {
-                                "fft_window": fft_window,
-                                "individual_freq_band_idxs": individual_freq_band_idxs
+                                "sfreq": self._sfreq,
+                                "freq_var": freq_var,
+                                "cf": cf
                                 }
                 return precomp
 
@@ -1537,6 +1526,7 @@ class NFRealtime:
                         freqs, psd = periodogram(data, sfreq, axis=1)
                 
                 elif method == "welch":
+                        print(f"using welch method ...")
                         freqs, psd = welch(data, sfreq, axis=1)
                 
                 elif method == "multitaper":
@@ -1644,7 +1634,7 @@ class NFRealtime:
                 return bp_1.mean() / bp_2.mean()
 
         @timed
-        def _individual_peak_power(self, data, fft_window, individual_freq_band_idxs):
+        def _individual_peak_power(self, data, sfreq, freq_var, cf):
                 """
                 Compute power around the individual peak frequency.
 
@@ -1662,10 +1652,13 @@ class NFRealtime:
                 float
                         Mean power across channels in the selected individual frequency band.
                 """
-                data = np.multiply(data, fft_window)
-                fftval = np.abs(np.fft.rfft(data, axis=1) / data.shape[-1])
-                power = np.average(np.square(fftval[:, individual_freq_band_idxs]).T)
-                return power
+                freqs, psd = welch(data, sfreq, axis=1)
+                mask = (freqs >= cf - freq_var) & (freqs <= cf + freq_var)
+                freq_res = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
+                bp = simpson(psd[:, mask], dx=freq_res, axis=1)
+                print(bp.mean())
+
+                return bp.mean()
 
         @timed
         def _entropy(self, data, sos, method, psd_method):
@@ -1694,7 +1687,7 @@ class NFRealtime:
                                 ents = compute_spect_entropy(sfreq=self._sfreq, data=data_filt, psd_method=psd_method)
                         case "SVD":
                                 ents = compute_svd_entropy(data_filt)
-                return ents.mean()
+                return ents.mean() - 2
 
         @timed
         def _source_power(self, data, fft_window, freq_band_idxs, brain_label, inverse_operator):
@@ -1845,7 +1838,7 @@ class NFRealtime:
                                                 alpha=alpha, 
                                                 beta=beta, 
                                                 )
-                avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean()
+                avg_edge = np.array([graph_matrix[idxs] for idxs in indices]).mean() - 0.025
                 return avg_edge
         
         @timed
