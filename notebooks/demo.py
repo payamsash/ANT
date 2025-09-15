@@ -3,6 +3,7 @@ from ant.tools import simulate_eeg_raw
 from ant import NFRealtime
 from mne.io import read_raw_fif
 import time
+import json
 
 def main():
     ## simulate
@@ -42,6 +43,10 @@ def main():
                     design_viz= "VisualRorschach",
                     show_brain_activation=True
                     )
+
+    fname = nf.subject_dir / "delays" / f"plotting_delay_visit_{nf.visit}.json"
+    with open(fname, "w") as file:
+        json.dump(nf.plot_delays, file)
 
 if __name__ == "__main__":
     main()
