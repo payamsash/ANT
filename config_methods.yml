@@ -68,3 +68,8 @@ NF_modality:
   # Track the power around the frequency with maximum activation.
     frange: [8, 13]  
     method: "welch"
+
+  cfc_sensor:
+    method: "tort"
+    frange_1: [8, 13]
+    frange_2: [30, 45]
