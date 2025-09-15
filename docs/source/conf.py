@@ -24,8 +24,8 @@ extensions = [
     "sphinx.ext.intersphinx",   # link to external docs (Python, NumPy…)
     "sphinx_autodoc_typehints", # nice rendering of type hints
     "numpydoc",
+    "sphinx_gallery.gen_gallery",
 ]
-# extensions.append("sphinx_gallery.gen_gallery")
 
 templates_path = ['_templates']
 exclude_patterns = []
@@ -41,3 +41,22 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
 html_static_path = ['_static']
+
+sphinx_gallery_conf = {
+    # path to your example scripts
+    'examples_dirs': os.path.abspath('../../examples'),  
+
+    # path where gallery generated examples will be saved
+    'gallery_dirs': 'auto_examples',  
+
+    # pattern to include only certain scripts
+    'filename_pattern': r'plot_.*\.py',  
+
+    # optional: execute examples to capture output (set True to run)
+    'run_stale_examples': True,  
+
+    # optional: directories to search for backreferences (links to API)
+    'backreferences_dir': os.path.join('generated', 'api'),  
+}
+
+

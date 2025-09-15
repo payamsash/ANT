@@ -1,0 +1,1412 @@
+{
+ "NFRealtime": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  }
+ ],
+ "Path.cwd": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "Path.cwd"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PurePath.cwd"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib.Path",
+   "module_short": "pathlib.Path",
+   "name": "cwd"
+  }
+ ],
+ "SourceSimulator": [
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mne.simulation.source",
+   "module_short": "mne.simulation",
+   "name": "SourceSimulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "SourceSimulator"
+  },
+  {
+   "is_class": true,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SourceSimulator"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "SourceSimulator"
+  }
+ ],
+ "add_eog": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "add_eog"
+  }
+ ],
+ "add_noise": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "add_noise"
+  }
+ ],
+ "amplitude": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "brain_label": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "str"
+  }
+ ],
+ "fetch_fsaverage": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.datasets",
+   "module_short": "mne.datasets",
+   "name": "fetch_fsaverage"
+  }
+ ],
+ "fname": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib",
+   "module_short": "pathlib",
+   "name": "PosixPath"
+  }
+ ],
+ "frequency": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "int"
+  }
+ ],
+ "kwargs": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "dict"
+  }
+ ],
+ "kwargs_sim": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "dict"
+  }
+ ],
+ "make_ad_hoc_cov": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "make_ad_hoc_cov"
+  }
+ ],
+ "make_forward_solution": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "make_forward_solution"
+  }
+ ],
+ "mods": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "list"
+  }
+ ],
+ "nf": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  }
+ ],
+ "nf.connect_to_lsl": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime.connect_to_lsl"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime.connect_to_lsl"
+  }
+ ],
+ "nf.get_blink_template": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime.get_blink_template"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime.get_blink_template"
+  }
+ ],
+ "nf.record_baseline": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime.record_baseline"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime.record_baseline"
+  }
+ ],
+ "nf.record_main": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant.realtime_nf",
+   "module_short": "ant",
+   "name": "NFRealtime.record_main"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime.record_main"
+  }
+ ],
+ "np.arange": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "arange"
+  }
+ ],
+ "np.pi": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "float"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "pi"
+  }
+ ],
+ "np.sin": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "ufunc"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "sin"
+  }
+ ],
+ "np.zeros": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "zeros"
+  }
+ ],
+ "os.makedirs": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os",
+   "module_short": "os",
+   "name": "makedirs"
+  }
+ ],
+ "os.path.dirname": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os.path",
+   "module_short": "os.path",
+   "name": "dirname"
+  }
+ ],
+ "os.path.join": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os.path",
+   "module_short": "os.path",
+   "name": "join"
+  }
+ ],
+ "raw": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array._array",
+   "module_short": "mne.io",
+   "name": "RawArray"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array",
+   "module_short": "mne.io",
+   "name": "RawArray"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "RawArray"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "RawArray"
+  }
+ ],
+ "raw.drop_channels": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array._array",
+   "module_short": "mne.io",
+   "name": "RawArray.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array",
+   "module_short": "mne.io",
+   "name": "RawArray.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "RawArray.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "RawArray.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.base",
+   "module_short": "mne.io",
+   "name": "BaseRaw.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "BaseRaw.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "BaseRaw.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.proj",
+   "module_short": "mne._fiff.proj",
+   "name": "ProjMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ProjMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ProjMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "ContainsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ContainsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ContainsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "UpdateChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "UpdateChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "UpdateChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "ReferenceMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "ReferenceMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ReferenceMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "SetChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "SetChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SetChannelsMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "InterpolationMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "InterpolationMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "InterpolationMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "TimeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "TimeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "TimeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "SizeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "SizeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SizeMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.filter",
+   "module_short": "mne.filter",
+   "name": "FilterMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "FilterMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency.spectrum",
+   "module_short": "mne.time_frequency.spectrum",
+   "name": "SpectrumMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency",
+   "module_short": "mne.time_frequency",
+   "name": "SpectrumMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SpectrumMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "MontageMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "MontageMixin.drop_channels"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "MontageMixin.drop_channels"
+  }
+ ],
+ "raw.info": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "Info"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "Info"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "Info"
+  }
+ ],
+ "raw.save": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array._array",
+   "module_short": "mne.io",
+   "name": "RawArray.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array",
+   "module_short": "mne.io",
+   "name": "RawArray.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "RawArray.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "RawArray.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.base",
+   "module_short": "mne.io",
+   "name": "BaseRaw.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "BaseRaw.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "BaseRaw.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.proj",
+   "module_short": "mne._fiff.proj",
+   "name": "ProjMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ProjMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ProjMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "ContainsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ContainsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ContainsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "UpdateChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "UpdateChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "UpdateChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "ReferenceMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "ReferenceMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ReferenceMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "SetChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "SetChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SetChannelsMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "InterpolationMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "InterpolationMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "InterpolationMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "TimeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "TimeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "TimeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "SizeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "SizeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SizeMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.filter",
+   "module_short": "mne.filter",
+   "name": "FilterMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "FilterMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency.spectrum",
+   "module_short": "mne.time_frequency.spectrum",
+   "name": "SpectrumMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency",
+   "module_short": "mne.time_frequency",
+   "name": "SpectrumMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SpectrumMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "MontageMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "MontageMixin.save"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "MontageMixin.save"
+  }
+ ],
+ "raw.set_montage": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array._array",
+   "module_short": "mne.io",
+   "name": "RawArray.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.array",
+   "module_short": "mne.io",
+   "name": "RawArray.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "RawArray.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "RawArray.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io.base",
+   "module_short": "mne.io",
+   "name": "BaseRaw.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "BaseRaw.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "BaseRaw.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.proj",
+   "module_short": "mne._fiff.proj",
+   "name": "ProjMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ProjMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ProjMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "ContainsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "ContainsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ContainsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "UpdateChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "UpdateChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "UpdateChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "ReferenceMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "ReferenceMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "ReferenceMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "SetChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "SetChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SetChannelsMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels.channels",
+   "module_short": "mne.channels.channels",
+   "name": "InterpolationMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.channels",
+   "module_short": "mne.channels",
+   "name": "InterpolationMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "InterpolationMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "TimeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "TimeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "TimeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils.mixin",
+   "module_short": "mne.utils.mixin",
+   "name": "SizeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.utils",
+   "module_short": "mne.utils",
+   "name": "SizeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SizeMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.filter",
+   "module_short": "mne.filter",
+   "name": "FilterMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "FilterMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency.spectrum",
+   "module_short": "mne.time_frequency.spectrum",
+   "name": "SpectrumMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.time_frequency",
+   "module_short": "mne.time_frequency",
+   "name": "SpectrumMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "SpectrumMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff.meas_info",
+   "module_short": "mne._fiff.meas_info",
+   "name": "MontageMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne._fiff",
+   "module_short": "mne._fiff",
+   "name": "MontageMixin.set_montage"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "MontageMixin.set_montage"
+  }
+ ],
+ "read_labels_from_annot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "read_labels_from_annot"
+  }
+ ],
+ "read_raw_brainvision": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "read_raw_brainvision"
+  }
+ ],
+ "rename_channels": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "rename_channels"
+  }
+ ],
+ "select_sources": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.label",
+   "module_short": "mne.label",
+   "name": "select_sources"
+  }
+ ],
+ "set_log_level": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "set_log_level"
+  }
+ ],
+ "simulate_eeg_raw": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  }
+ ],
+ "simulate_raw": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "function"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "simulate_raw"
+  }
+ ],
+ "time.sleep": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "builtins",
+   "module_short": "builtins",
+   "name": "builtin_function_or_method"
+  },
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "time",
+   "module_short": "time",
+   "name": "sleep"
+  }
+ ]
+}
