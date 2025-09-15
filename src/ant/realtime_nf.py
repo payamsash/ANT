@@ -358,6 +358,7 @@ class NFRealtime:
                 show_raw_signal: bool = True,
                 show_nf_signal: bool = True,
                 time_window: float = 10.0,
+                show_brain_activation: bool = False,
                 show_design_viz: bool = True,
                 design_viz: str = "VisualRorschach",
                 use_ring_buffer: bool = False,
@@ -514,6 +515,8 @@ class NFRealtime:
                                         handler = self.scale_up if sign == "+" else self.scale_down
                                         btn.clicked.connect(lambda checked, idx=i, h=handler: h(idx))
 
+                if show_brain_activation:
+                        self.initiate_brain_plot()
                 if show_raw_signal:
                         self.plot_rt()
                 if self.show_design_viz:
@@ -572,6 +575,9 @@ class NFRealtime:
                                                 plot_delays.append(time.time() - plot_tic)
                                         time.sleep(0.001)
 
+                                if show_brain_activation:
+                                        self.plot_brain_activation(data)
+                                        time.sleep(0.01)
                                 if show_design_viz:
                                         plot_design(nf_val)
 
@@ -996,6 +1002,38 @@ class NFRealtime:
                         nonlinearity=nonlinearity,
                         random_state=random_state,
                 )
+        
+        ## --------------------------- 3D brain activation --------------------------- ##
+
+        def initiate_brain_plot(self):
+                subjects_dir = "/Applications/freesurfer/dev/subjects" # fix this later
+                self.hemi_offsets, self.scalars_full, self.mesh, self.verts_stc = \
+                                                setup_surface(subjects_dir, hemi_distance=100.0)
+                self.plotter = setup_plotter(self.mesh)
+
+        def plot_brain_activation(self, data, interval=0.05): 
+
+                raw_data = RawArray(data, self.rec_info)
+                raw_data.set_eeg_reference("average", projection=True)
+                stc = apply_inverse_raw(raw_data, self.inv, lambda2=1 / 9, pick_ori="normal")
+
+                n_times = data.shape[1]
+                block = 25
+                n_blocks = n_times // block
+
+                for b in range(n_blocks):
+                        for hemi in ["lh", "rh"]:
+                                verts = self.verts_stc[hemi] + self.hemi_offsets[hemi]
+                                if hemi == "rh": block_mean = stc.rh_data[:, b*block:(b+1)*block].mean(axis=1)
+                                if hemi == "lh": block_mean = stc.lh_data[:, b*block:(b+1)*block].mean(axis=1)
+                                self.scalars_full[verts] = block_mean
+
+                        self.mesh["activity"] = self.scalars_full
+                        self.mesh.Modified()
+                        self.plotter.update_scalars(self.mesh["activity"], render=True)
+                        time.sleep(interval)
+
+                #self.plotter.show(auto_close=False)
 
         ## --------------------------- Data I/O & Session Management --------------------------- ##
 
