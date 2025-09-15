@@ -1,4 +1,5 @@
 import os.path as op
+from pathlib import Path
 import time
 from copy import deepcopy
 from functools import wraps
@@ -12,6 +13,8 @@ from scipy.spatial.distance import pdist, squareform
 from fooof import FOOOF
 from pyunlocbox import functions, solvers
 from padasip.filters import FilterLMS
+import pyvista as pv
+from nibabel.freesurfer import read_morph_data
 
 from mne import make_forward_solution, compute_raw_covariance
 from mne.io import read_raw
@@ -19,7 +22,8 @@ from mne.preprocessing import ICA
 from mne.datasets import fetch_fsaverage
 from mne.minimum_norm import make_inverse_operator
 from mne.time_frequency import psd_array_multitaper
-from mne.viz import create_3d_figure, get_brain_class
+from mne.viz import create_3d_figure, get_brain_class, set_3d_backend
+from mne.surface import read_surface
 
 from mne_icalabel import label_components
 
@@ -683,3 +687,105 @@ def create_blink_template(raw, max_iter=800, method="infomax"):
                 template_blink_comp = ica.get_components()[:, blink_idx]
 
         return template_blink_comp
+
+def setup_surface(subjects_dir, hemi_distance=100.0):
+        """Fetch fsaverage surfaces and prepare PyVista mesh for both hemispheres."""
+        fs_dir = Path(subjects_dir) / "fsaverage5"
+        verts_all = []
+        faces_all = []
+        offset = 0
+        hemi_offsets = {}
+        set_3d_backend("pyvistaqt")
+
+        # Load sulcal depth
+        lh_sulc = read_morph_data(fs_dir / 'surf' / 'lh.sulc')
+        rh_sulc = read_morph_data(fs_dir / 'surf' / 'rh.sulc')
+        sulc_all = np.hstack([lh_sulc, rh_sulc])
+
+        # Load surfaces and separate hemispheres along x-axis
+        for hemi in ["lh", "rh"]:
+                surf_path = fs_dir / "surf" / f"{hemi}.inflated"
+                verts_surf, faces_surf = read_surface(surf_path)
+
+                # Apply translation: shift right hemisphere
+                if hemi == "rh":
+                        verts_surf[:, 0] += hemi_distance
+
+                hemi_offsets[hemi] = offset
+                verts_all.append(verts_surf)
+
+                # Convert faces to PyVista format
+                faces_pv = np.hstack([
+                        np.full((faces_surf.shape[0], 1), 3),
+                        faces_surf + offset
+                ]).astype(np.int64).ravel()
+                faces_all.append(faces_pv)
+
+                offset += verts_surf.shape[0]
+
+        # Combine hemispheres
+        verts_all = np.vstack(verts_all)
+        faces_all = np.hstack(faces_all)
+
+        # Create PyVista mesh
+        mesh = pv.PolyData(verts_all, faces_all)
+        mesh["base"] = sulc_all
+
+        # Initialize activity scalars
+        n_vertices = 10242
+        verts_stc = {}
+        verts_stc["lh"] = np.arange(n_vertices)
+        verts_stc["rh"] = np.arange(n_vertices)
+        scalars_full = np.zeros(mesh.n_points)
+        for hemi in ["lh", "rh"]:
+                verts = verts_stc["lh"] + verts_stc["rh"]
+                scalars_full[verts] = np.zeros(shape=(n_vertices,))
+        mesh["activity"] = scalars_full
+
+        return hemi_offsets, scalars_full, mesh, verts_stc
+
+def setup_plotter(mesh):
+        """Initialize PyVista plotter, add mesh, and set camera."""
+        plotter = pv.Plotter(window_size=(1800, 1200), lighting="three lights")
+        plotter.set_background("black")
+
+        # Add base mesh (sulcal depth)
+        plotter.add_mesh(
+                mesh,
+                scalars="base",
+                cmap="hot",
+                smooth_shading=True,
+                show_scalar_bar=False
+        )
+
+        # Add activity overlay as semi-transparent layer
+        clim = [-10, 10]
+        actor = plotter.add_mesh(
+                mesh,
+                scalars="activity",
+                cmap="hot",
+                opacity=0.6,
+                clim=clim,
+                smooth_shading=True,
+                show_scalar_bar=False,
+                interpolate_before_map=True
+        )
+        plotter.add_scalar_bar(
+                title="Activity",
+                italic=True,
+                vertical=True,
+                position_x=0.85,
+                position_y=0.1,   
+                height=0.8,
+                color='white',
+                title_font_size=16,
+                label_font_size=14
+        )
+        plotter.enable_eye_dome_lighting()
+
+        # Set camera
+        plotter.camera_position = "yz"
+        plotter.camera.azimuth = 45
+        plotter.show(interactive_update=True, auto_close=False)
+
+        return plotter
