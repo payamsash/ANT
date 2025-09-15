@@ -19,6 +19,7 @@ from pyqtgraph.Qt import QtCore, QtWidgets
 import pyqtgraph as pg
 from scipy.optimize import curve_fit
 from scipy.signal import sosfiltfilt
+from pactools import Comodulogram
 
 import mne
 from mne import Report, read_labels_from_annot, set_log_level
@@ -576,7 +577,10 @@ class NFRealtime:
                                         time.sleep(0.001)
 
                                 if show_brain_activation:
+                                        plot_tic = time.time()
                                         self.plot_brain_activation(data)
+                                        if estimate_delays:
+                                                plot_delays.append(time.time() - plot_tic)
                                         time.sleep(0.01)
                                 if show_design_viz:
                                         plot_design(nf_val)
@@ -615,8 +619,8 @@ class NFRealtime:
                         method_delay=False,
                         format="json",
                         )
-
-                self.app.exec()
+                if show_nf_signal:
+                        self.app.exec()
         
         def _record_with_ring_buffer(
                 self,
@@ -1581,6 +1585,18 @@ class NFRealtime:
                         sos=sos,
                 )
 
+        def _sensor_cfc_prep(self) -> dict:
+
+                comod = Comodulogram(
+                                        fs=self._sfreq,
+                                        low_fq_range=np.linspace(self.params["frange_1"][0], self.params["frange_1"][1], 5),
+                                        high_fq_range=np.linspace(self.params["frange_2"][0], self.params["frange_2"][1], 5),
+                                        method=self.params["method"],
+                                        n_surrogates=0
+                                )
+                return comod
+
+
         ## --------------------------- Neural Feature Extraction Methods (main) --------------------------- ##
 
         @timed
@@ -2078,3 +2094,12 @@ class NFRealtime:
 
                 avg_edge = float(graph_matrix[bl_idxs[0], bl_idxs[1]])
                 return avg_edge
+
+        @timed
+        def _sensor_cfc(self,
+                        data: np.ndarray,
+                        comod
+                        ) -> float:
+                comod.fit(data)
+
+                return comod.comod_.mean()
