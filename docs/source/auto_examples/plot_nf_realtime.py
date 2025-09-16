@@ -214,7 +214,7 @@ mods = [
 ]
 
 nf.record_main(
-    duration=60, 
+    duration=10, 
     modality=mods,
     picks=None,
     winsize=1,

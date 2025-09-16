@@ -25,6 +25,8 @@ extensions = [
     "sphinx_autodoc_typehints", # nice rendering of type hints
     "numpydoc",
     "sphinx_gallery.gen_gallery",
+    "sphinxcontrib.bibtex",
+    "sphinx_tabs.tabs",
 ]
 
 templates_path = ['_templates']
@@ -41,12 +43,14 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
 }
 html_static_path = ['_static']
+html_css_files = ['custom.css']
+bibtex_bibfiles = ['references.bib']
+html_title = "ANT"
+
 
 sphinx_gallery_conf = {
     # path to your example scripts
     'examples_dirs': os.path.abspath('../../examples'),  
-
-    # path where gallery generated examples will be saved
     'gallery_dirs': 'auto_examples',  
 
     # pattern to include only certain scripts
@@ -58,5 +62,3 @@ sphinx_gallery_conf = {
     # optional: directories to search for backreferences (links to API)
     'backreferences_dir': os.path.join('generated', 'api'),  
 }
-
-

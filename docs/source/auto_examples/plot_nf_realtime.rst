@@ -288,14 +288,14 @@ subject.
         Found     0/ 7809 points outside using surface Qhull
         Found     0/ 7809 points outside using solid angles
         Total 10242/10242 points inside the surface
-    Interior check completed in 2109.4 ms
+    Interior check completed in 2100.9 ms
     Checking surface interior status for 10242 points...
         Found  2241/10242 points inside  an interior sphere of radius   47.7 mm
         Found     0/10242 points outside an exterior sphere of radius   98.3 mm
         Found     0/ 8001 points outside using surface Qhull
         Found     0/ 8001 points outside using solid angles
         Total 10242/10242 points inside the surface
-    Interior check completed in 2133.1 ms
+    Interior check completed in 2134.6 ms
 
     Setting up for EEG...
     Computing EEG at 20484 source locations (free orientations)...
@@ -386,7 +386,7 @@ The results will be saved in the subject's directory.
     ]
 
     nf.record_main(
-        duration=60, 
+        duration=10, 
         modality=mods,
         picks=None,
         winsize=1,
@@ -418,7 +418,7 @@ object. You can now visualize or analyze the feedback signals as needed.
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (1 minutes 35.814 seconds)
+   **Total running time of the script:** (0 minutes 43.145 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_nf_realtime.py:

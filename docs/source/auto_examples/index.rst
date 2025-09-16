@@ -1,6 +1,6 @@
 :orphan:
 
-Examples for ANT: Neurofeedback and EEG Simulations
+Examples Gallery
 ===================================================
 
 This gallery contains examples demonstrating how to:
@@ -8,8 +8,6 @@ This gallery contains examples demonstrating how to:
 - Simulate EEG data with sinusoidal sources in cortical labels.
 - Record baseline and main neurofeedback sessions using the ANT package.
 - Analyze and visualize neurofeedback signals.
-
-Each example contains step-by-step explanations and runnable code.
 
 
 
@@ -21,14 +19,31 @@ Each example contains step-by-step explanations and runnable code.
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="This example shows how to visualize delays for different neurofeedback methods using Seaborn&#x27;s FacetGrid and KDE plots.">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_method_delays_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_auto_examples_plot_method_delays.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Plot neurofeedback method delays</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This example demonstrates how to simulate EEG data with sinusoidal sources  in a specific brain region and use it for a neurofeedback session using the ANT package.">
 
 .. only:: html
 
-  .. image:: /auto_examples/images/thumb/sphx_glr_plot_nf_realtime_thumb.png
+  .. image:: /auto_examples/images/thumb/sphx_glr_pl2ot_nf_realtime_thumb.png
     :alt:
 
-  :ref:`sphx_glr_auto_examples_plot_nf_realtime.py`
+  :ref:`sphx_glr_auto_examples_pl2ot_nf_realtime.py`
 
 .. raw:: html
 
@@ -46,7 +61,8 @@ Each example contains step-by-step explanations and runnable code.
 .. toctree::
    :hidden:
 
-   /auto_examples/plot_nf_realtime
+   /auto_examples/plot_method_delays
+   /auto_examples/pl2ot_nf_realtime
 
 
 .. only:: html

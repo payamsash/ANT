@@ -1,0 +1,200 @@
+{
+ "NFRealtime": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "ant",
+   "module_short": "ant",
+   "name": "NFRealtime"
+  }
+ ],
+ "Path.cwd": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "pathlib.Path",
+   "module_short": "pathlib.Path",
+   "name": "cwd"
+  }
+ ],
+ "SourceSimulator": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "SourceSimulator"
+  }
+ ],
+ "add_eog": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "add_eog"
+  }
+ ],
+ "add_noise": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "add_noise"
+  }
+ ],
+ "fetch_fsaverage": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.datasets",
+   "module_short": "mne.datasets",
+   "name": "fetch_fsaverage"
+  }
+ ],
+ "make_ad_hoc_cov": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "make_ad_hoc_cov"
+  }
+ ],
+ "make_forward_solution": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "make_forward_solution"
+  }
+ ],
+ "np.arange": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "arange"
+  }
+ ],
+ "np.pi": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "pi"
+  }
+ ],
+ "np.sin": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "sin"
+  }
+ ],
+ "np.zeros": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "numpy",
+   "module_short": "numpy",
+   "name": "zeros"
+  }
+ ],
+ "os.makedirs": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os",
+   "module_short": "os",
+   "name": "makedirs"
+  }
+ ],
+ "os.path.dirname": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os.path",
+   "module_short": "os.path",
+   "name": "dirname"
+  }
+ ],
+ "os.path.join": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "os.path",
+   "module_short": "os.path",
+   "name": "join"
+  }
+ ],
+ "read_labels_from_annot": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "read_labels_from_annot"
+  }
+ ],
+ "read_raw_brainvision": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.io",
+   "module_short": "mne.io",
+   "name": "read_raw_brainvision"
+  }
+ ],
+ "rename_channels": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "rename_channels"
+  }
+ ],
+ "select_sources": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.label",
+   "module_short": "mne.label",
+   "name": "select_sources"
+  }
+ ],
+ "set_log_level": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne",
+   "module_short": "mne",
+   "name": "set_log_level"
+  }
+ ],
+ "simulate_raw": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "mne.simulation",
+   "module_short": "mne.simulation",
+   "name": "simulate_raw"
+  }
+ ],
+ "time.sleep": [
+  {
+   "is_class": false,
+   "is_explicit": false,
+   "module": "time",
+   "module_short": "time",
+   "name": "sleep"
+  }
+ ]
+}
