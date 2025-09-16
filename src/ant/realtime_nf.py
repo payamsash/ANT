@@ -620,7 +620,9 @@ class NFRealtime:
                         format="json",
                         )
                 if show_nf_signal:
-                        self.app.exec()
+                        # self.app.exec()
+                        self.plot_widget.close()
+                        self.app.quit()
         
         def _record_with_ring_buffer(
                 self,
