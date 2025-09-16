@@ -10,7 +10,7 @@
 [![Conda Platforms](https://img.shields.io/conda/pn/conda-forge/mne-lsl.svg)](https://anaconda.org/conda-forge/mne-lsl)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.08088/status.svg)](https://doi.org/10.21105/joss.08088)
 
-<img align="right" src="https://raw.githubusercontent.com/payamsash/ANT/main/docs/_static/ANT_Logo_Horizontal.svg" alt="logo" width="200"/>
+<img align="right" src="https://raw.githubusercontent.com/payamsash/ANT/main/docs/source/_static/ANT_Logo_Horizontal.svg" alt="logo" width="200"/>
 
 **ANT** is an open-source Python package for **real-time processing and visualization of M/EEG neurofeedback experiments**,  
 developed in the context of the *Advancing Neurofeedback in Tinnitus* (ANT) project.
@@ -30,7 +30,7 @@ ANT supports `python ≥ 3.10` and is available on
 
 # Acknowledgment
  the work is done under SNS grant Advancing Neurofeedback in Tinnitus (ANT) Closing the loop with stimulus design and neural feature training number: 208164 
-<img align="right" src="https://raw.githubusercontent.com/payamsash/ANT/main/docs/_static/SNF.png" width=100>
+<img align="right" src="https://raw.githubusercontent.com/payamsash/ANT/main/docs/source/_static/SNF.png" width=100>
 
 # Copyright and license
 
