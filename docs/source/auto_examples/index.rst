@@ -19,6 +19,23 @@ This gallery contains examples demonstrating how to:
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="This example visually compares the delays observed for several common source localization techniques:">
+
+.. only:: html
+
+  .. image:: /auto_examples/images/thumb/sphx_glr_plot_sl_method_delays_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_auto_examples_plot_sl_method_delays.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Compare Delays Across Different Source Localization Methods</div>
+    </div>
+
+
+.. raw:: html
+
     <div class="sphx-glr-thumbcontainer" tooltip="This example shows how to visualize delays for different neurofeedback methods using Seaborn&#x27;s FacetGrid and KDE plots.">
 
 .. only:: html
@@ -61,6 +78,7 @@ This gallery contains examples demonstrating how to:
 .. toctree::
    :hidden:
 
+   /auto_examples/plot_sl_method_delays
    /auto_examples/plot_method_delays
    /auto_examples/pl2ot_nf_realtime
 
