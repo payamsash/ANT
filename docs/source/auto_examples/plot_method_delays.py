@@ -1,5 +1,5 @@
 """
-Plot neurofeedback method delays
+Compare different neurofeedback method delays
 ===================================================
 
 This example shows how to visualize delays for different neurofeedback

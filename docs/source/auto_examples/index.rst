@@ -47,7 +47,7 @@ This gallery contains examples demonstrating how to:
 
 .. raw:: html
 
-      <div class="sphx-glr-thumbnail-title">Plot neurofeedback method delays</div>
+      <div class="sphx-glr-thumbnail-title">Compare different neurofeedback method delays</div>
     </div>
 
 

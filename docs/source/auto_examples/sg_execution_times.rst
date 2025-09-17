@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:01.497** total execution time for 3 files **from auto_examples**:
+**00:01.528** total execution time for 3 files **from auto_examples**:
 
 .. container::
 
@@ -33,10 +33,10 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_auto_examples_plot_method_delays.py` (``plot_method_delays.py``)
-     - 00:01.066
+     - 00:01.094
      - 0.0
    * - :ref:`sphx_glr_auto_examples_plot_sl_method_delays.py` (``plot_sl_method_delays.py``)
-     - 00:00.432
+     - 00:00.434
      - 0.0
    * - :ref:`sphx_glr_auto_examples_pl2ot_nf_realtime.py` (``pl2ot_nf_realtime.py``)
      - 00:00.000

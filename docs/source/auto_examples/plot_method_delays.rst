@@ -18,7 +18,7 @@
 .. _sphx_glr_auto_examples_plot_method_delays.py:
 
 
-Plot neurofeedback method delays
+Compare different neurofeedback method delays
 ===================================================
 
 This example shows how to visualize delays for different neurofeedback
@@ -286,7 +286,7 @@ Finally, visualize delays for "source_connectivity_pli", "source_connectivity_co
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.066 seconds)
+   **Total running time of the script:** (0 minutes 1.094 seconds)
 
 
 .. _sphx_glr_download_auto_examples_plot_method_delays.py:
