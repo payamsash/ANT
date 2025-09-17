@@ -399,7 +399,7 @@ def _compute_inv_operator(
         noise_cov = compute_raw_covariance(raw_baseline, method="empirical")
         inverse_operator = make_inverse_operator(raw_baseline.info, fwd, noise_cov)
 
-        return inverse_operator
+        return inverse_operator, fwd, noise_cov
 
 def weight_to_degree_map(n_nodes):
         """
