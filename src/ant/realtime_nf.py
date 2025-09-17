@@ -586,7 +586,7 @@ class NFRealtime:
                                         self.plot_brain_activation(data)
                                         if estimate_delays:
                                                 plot_delays.append(time.time() - plot_tic)
-                                        time.sleep(0.01)
+                                        time.sleep(0.05)
                                 if show_design_viz:
                                         plot_design(nf_val)
 
@@ -1042,7 +1042,7 @@ class NFRealtime:
                 stc = apply_inverse_raw(raw_data, self.inv, lambda2=1 / 9, pick_ori="normal")
 
                 n_times = data.shape[1]
-                block = 25
+                block = int(data.shape[1] / 2)
                 n_blocks = n_times // block
 
                 for b in range(n_blocks):
