@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +12,6 @@ from warnings import warn
 
 import matplotlib.pyplot as plt
 import numpy as np
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QPushButton
 from pyqtgraph.Qt import QtCore, QtWidgets
 import pyqtgraph as pg
@@ -22,7 +20,13 @@ from scipy.signal import sosfiltfilt
 from pactools import Comodulogram
 
 import mne
-from mne import Report, read_labels_from_annot, set_log_level
+from mne import (
+        Report,
+        read_labels_from_annot,
+        set_log_level,
+        write_forward_solution,
+        write_cov
+)
 from mne.channels import get_builtin_montages, read_dig_captrak
 from mne.io import RawArray
 from mne.utils import logger
@@ -31,6 +35,7 @@ from mne.minimum_norm import (
         read_inverse_operator,
         write_inverse_operator,
 )
+from mne.beamformer import apply_lcmv_raw, make_lcmv
 from mne_connectivity import spectral_connectivity_time
 from mne_features.univariate import (
         compute_app_entropy,
@@ -944,16 +949,29 @@ class NFRealtime:
                 --------
                 >>> session.compute_inv_operator()
                 """
-                self.inv = _compute_inv_operator(
-                        self.raw_baseline,
-                        subject_fs_id=self.subject_fs_id,
-                        subjects_fs_dir=self.subjects_fs_dir,
-                )
+                self.inv, self.fwd, self.noise_cov = \
+                        _compute_inv_operator(
+                                self.raw_baseline,
+                                subject_fs_id=self.subject_fs_id,
+                                subjects_fs_dir=self.subjects_fs_dir,
+                        )
                 write_inverse_operator(
                         fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif",
                         inv=self.inv,
                         overwrite=True,
                 )
+                write_forward_solution(
+                        fname=self.subject_dir / "inv" / f"visit_{self.visit}-fwd.fif",
+                        fwd=self.fwd,
+                        overwrite=True,
+                )
+                write_cov(
+                        fname=self.subject_dir / "inv" / f"visit_{self.visit}-cov.fif",
+                        cov=self.noise_cov,
+                        overwrite=True,
+                )
+
+
 
 
         def run_orica(
@@ -1398,14 +1416,28 @@ class NFRealtime:
                 bl_idx = bl_names.index(self.params["brain_label"])
                 brain_label = bls[bl_idx]
 
-                inv_fname = self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif"
-                inverse_operator = read_inverse_operator(fname=inv_fname)
+                if self.params["method"] in ["MNE", "dSPM", "sLORETA", "eLORETA"]:
+                        inv_fname = self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif"
+                        inverse_operator = read_inverse_operator(fname=inv_fname)
+
+
+                if self.params["method"] == "LCMV":
+                        inverse_operator = make_lcmv(
+                                                self.rec_info,
+                                                self.fwd,
+                                                self.noise_cov,
+                                                reg=0.05,
+                                                pick_ori="max-power",
+                                                weight_norm="unit-noise-gain",
+                                                rank=None,
+                                        )
 
                 return dict(
                         fft_window=fft_window,
                         freq_band_idxs=freq_band_idxs,
                         brain_label=brain_label,
                         inverse_operator=inverse_operator,
+                        method=self.params["method"],
                 )
 
         def _sensor_connectivity_prep(self) -> dict:
@@ -1853,6 +1885,7 @@ class NFRealtime:
                 freq_band_idxs: np.ndarray,
                 brain_label,
                 inverse_operator,
+                method,
                 ) -> float:
                 """Compute source-level power for a specific brain label.
 
@@ -1877,17 +1910,24 @@ class NFRealtime:
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
 
-                stc_data = apply_inverse_raw(
-                        raw_data,
-                        inverse_operator,
-                        lambda2=1.0 / 9,
-                        pick_ori="normal",
-                        label=brain_label,
-                ).data
+
+                if method in ["MNE", "dSPM", "sLORETA", "eLORETA"]:
+                        stc_data = apply_inverse_raw(
+                                raw_data,
+                                inverse_operator,
+                                lambda2=1.0 / 9,
+                                method=method,
+                                pick_ori="normal",
+                                label=brain_label,
+                                ).data
+                        
+                if method == "LCMV":
+                        stc_data = apply_lcmv_raw(raw_data, inverse_operator).data
 
                 stc_data *= fft_window
                 fft_val = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
                 power = np.mean(np.square(fft_val[:, freq_band_idxs]))
+                print(power)
 
                 return float(power)
 
