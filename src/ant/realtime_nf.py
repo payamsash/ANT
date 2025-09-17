@@ -1030,13 +1030,70 @@ class NFRealtime:
         ## --------------------------- 3D brain activation --------------------------- ##
 
         def initiate_brain_plot(self):
+                """
+                Initialize the 3D brain plot for real-time visualization.
+
+                This method sets up the cortical surface mesh, scalar arrays, 
+                and vertex indices for both hemispheres. It then initializes 
+                the PyVista plotter to visualize brain activation.
+
+                Notes
+                -----
+                - The `subjects_dir` currently points to a fixed FreeSurfer directory.
+                Update this path as needed.
+                - The method calls `setup_surface` to generate surface mesh data 
+                and `setup_plotter` to create the PyVista plotter.
+
+                Attributes Set
+                ----------------
+                self.hemi_offsets : dict
+                        Hemisphere offsets for proper vertex indexing.
+                self.scalars_full : ndarray
+                        Array to store activation scalars for the full mesh.
+                self.mesh : pyvista.PolyData
+                        The cortical surface mesh.
+                self.verts_stc : dict
+                        Vertex indices corresponding to source estimates for each hemisphere.
+                self.plotter : pyvista.Plotter
+                        The PyVista plotter object for real-time updates.
+                """
                 subjects_dir = "/Applications/freesurfer/dev/subjects" # fix this later
                 self.hemi_offsets, self.scalars_full, self.mesh, self.verts_stc = \
                                                 setup_surface(subjects_dir, hemi_distance=100.0)
                 self.plotter = setup_plotter(self.mesh)
 
         def plot_brain_activation(self, data, interval=0.05): 
+                """
+                Update the brain plot with real-time source activation.
 
+                This method projects M/EEG data onto the cortical surface using an
+                inverse operator, computes mean activation in time blocks for each 
+                hemisphere, and updates the 3D brain visualization.
+
+                Parameters
+                ----------
+                data : ndarray, shape (n_channels, n_times)
+                        The raw EEG/MEG data to project and visualize.
+                interval : float, default=0.05
+                        Pause in seconds between rendering each block, controlling
+                        the update speed of the visualization.
+
+                Notes
+                -----
+                - Uses `RawArray` from MNE to wrap the data and set an average EEG
+                reference if applicable.
+                - Applies the inverse operator via `apply_inverse_raw` with
+                `pick_ori='normal'`.
+                - Data is divided into blocks for smoother visualization; each
+                block is averaged and assigned to the mesh scalars.
+                - PyVista mesh is updated in place and rendered in real-time.
+
+                Raises
+                ------
+                RuntimeError
+                        If `initiate_brain_plot` has not been called before this method.
+
+                """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
                 stc = apply_inverse_raw(raw_data, self.inv, lambda2=1 / 9, pick_ori="normal")
