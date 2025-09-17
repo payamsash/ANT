@@ -90,7 +90,29 @@ class ORICA:
 
     # ---------- Fit ----------
     def partial_fit(self, X):
-        """Update unmixing matrix with a new block of EEG data."""
+        """
+        Update the unmixing matrix with a new block of EEG data using online ICA.
+
+        This method performs one iteration of the ORICA algorithm, updating the
+        unmixing matrix `W` incrementally with the provided data block `X`. It
+        handles online whitening if enabled and maintains stability via QR 
+        decomposition.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_channels, n_samples)
+            A block of EEG data. Each row corresponds to one channel.
+
+        Returns
+        -------
+        self : instance of ORICA
+            The updated ORICA instance with the new unmixing matrix.
+        
+        Raises
+        ------
+        ValueError
+            If `X` does not have the expected number of channels.
+        """
         if X.shape[0] != self.n_channels:
             raise ValueError(f"Expected {self.n_channels} channels, got {X.shape[0]}")
 
@@ -122,7 +144,22 @@ class ORICA:
 
     # ---------- Transform ----------
     def transform(self, X):
-        """Apply learned unmixing to data (without updating W)."""
+        """
+        Apply the learned unmixing matrix to new data without updating it.
+
+        This projects EEG data onto the source space using the current `W`.
+        Online whitening is applied if enabled. No adaptation of `W` occurs.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_channels, n_samples)
+            EEG data to transform.
+
+        Returns
+        -------
+        S : ndarray, shape (n_channels, n_samples)
+            The estimated source signals.
+        """
         if self.online_whitening:
             if self.calibrate_pca and self._calibrated:
                 Xw = self._apply_whitening(X)  # fix for #2
@@ -133,12 +170,47 @@ class ORICA:
         return self.W @ Xw
 
     def fit_transform(self, X):
-        """Fit and return sources."""
+        """
+        Fit ORICA to the data block `X` and return the estimated sources.
+
+        This is equivalent to calling `partial_fit(X)` followed by `transform(X)`.
+
+        Parameters
+        ----------
+        X : ndarray, shape (n_channels, n_samples)
+            EEG data block.
+
+        Returns
+        -------
+        S : ndarray, shape (n_channels, n_samples)
+            The estimated source signals.
+        """
         self.partial_fit(X)
         return self.transform(X)
 
     def inverse_transform(self, X):
-        """ Reconstruct EEG from sources. """
+        """
+        Reconstruct EEG data from the estimated sources.
+
+        This uses the pseudo-inverse of the unmixing matrix `W` to project
+        source signals back to the sensor space. The channel mean is added back
+        if available.
+
+        Parameters
+        ----------
+        S : ndarray, shape (n_channels, n_samples)
+            Source signals to reconstruct.
+
+        Returns
+        -------
+        X_rec : ndarray, shape (n_channels, n_samples)
+            Reconstructed EEG data in sensor space.
+
+        Raises
+        ------
+        RuntimeError
+            If the ORICA model has not been fitted yet.
+        """
         if self.W is None:
             raise RuntimeError("Model has not been fitted yet.")
         A = np.linalg.pinv(self.W)
@@ -148,6 +220,33 @@ class ORICA:
 
     # ---------- Blink IC detection ----------
     def find_blink_ic(self, template_map, threshold=0.7):
+        """
+        Identify independent components corresponding to blinks.
+
+        Correlates each column of the mixing matrix `A` with a blink template map
+        to detect blink-related components.
+
+        Parameters
+        ----------
+        template_map : ndarray, shape (n_channels,)
+            Template topography of a blink (e.g., from frontal electrodes).
+
+        threshold : float, default=0.7
+            Correlation threshold above which a component is considered blink-related.
+
+        Returns
+        -------
+        blink_idx : list of int
+            Indices of independent components likely corresponding to blinks.
+
+        corrs : ndarray, shape (n_components,)
+            Correlation values between each component and the blink template.
+
+        Raises
+        ------
+        RuntimeError
+            If the ORICA model has not been fitted yet.
+        """
         if self.W is None:
             raise RuntimeError("Model has not been fitted yet.")
 
