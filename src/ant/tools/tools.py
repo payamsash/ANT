@@ -753,13 +753,13 @@ def setup_plotter(mesh):
         plotter.add_mesh(
                 mesh,
                 scalars="base",
-                cmap="hot",
+                cmap="Greys",
                 smooth_shading=True,
                 show_scalar_bar=False
         )
 
         # Add activity overlay as semi-transparent layer
-        clim = [-10, 10]
+        clim = [0, 0.6]
         actor = plotter.add_mesh(
                 mesh,
                 scalars="activity",
