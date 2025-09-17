@@ -18,6 +18,7 @@ NF_modality:
     frange: [8, 13]
     brain_label: "pericalcarine-lh"
     atlas: "aparc" # The parcellation to use, e.g., 'aparc' or 'aparc.a2009s'.
+    method: "dSPM"
 
   sensor_connectivity:
   # Track the connection strength between multiple channels in sensor space.
