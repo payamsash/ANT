@@ -1,0 +1,977 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>ant package &#8212; ANT</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=842c8da3" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'ant';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="ant.tools package" href="ant.tools.html" />
+    <link rel="prev" title="&lt;no title&gt;" href="index.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">ANT</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="#">
+    API Reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="auto_examples/index.html">
+    Examples
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item current active">
+  <a class="nav-link nav-internal" href="#">
+    API Reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="auto_examples/index.html">
+    Examples
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"><ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="ant.tools.html">ant.tools package</a></li>
+</ul>
+</div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">ant package</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="ant-package">
+<h1>ant package<a class="headerlink" href="#ant-package" title="Link to this heading">#</a></h1>
+<section id="subpackages">
+<h2>Subpackages<a class="headerlink" href="#subpackages" title="Link to this heading">#</a></h2>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ant.tools.html">ant.tools package</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="ant.tools.html#submodules">Submodules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ant.tools.html#module-ant.tools.orica">ant.tools.orica module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA"><code class="docutils literal notranslate"><span class="pre">ORICA</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA.find_blink_ic"><code class="docutils literal notranslate"><span class="pre">ORICA.find_blink_ic()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA.fit_transform"><code class="docutils literal notranslate"><span class="pre">ORICA.fit_transform()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA.inverse_transform"><code class="docutils literal notranslate"><span class="pre">ORICA.inverse_transform()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA.partial_fit"><code class="docutils literal notranslate"><span class="pre">ORICA.partial_fit()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="ant.tools.html#ant.tools.orica.ORICA.transform"><code class="docutils literal notranslate"><span class="pre">ORICA.transform()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="ant.tools.html#module-ant.tools.simulation">ant.tools.simulation module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.simulation.simulate_eeg_raw"><code class="docutils literal notranslate"><span class="pre">simulate_eeg_raw()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="ant.tools.html#module-ant.tools.tools">ant.tools.tools module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.butter_bandpass"><code class="docutils literal notranslate"><span class="pre">butter_bandpass()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.compute_bandpower"><code class="docutils literal notranslate"><span class="pre">compute_bandpower()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.compute_fft"><code class="docutils literal notranslate"><span class="pre">compute_fft()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.create_blink_template"><code class="docutils literal notranslate"><span class="pre">create_blink_template()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.estimate_aperiodic_component"><code class="docutils literal notranslate"><span class="pre">estimate_aperiodic_component()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.get_canonical_freqs"><code class="docutils literal notranslate"><span class="pre">get_canonical_freqs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.get_params"><code class="docutils literal notranslate"><span class="pre">get_params()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.log_degree_barrier"><code class="docutils literal notranslate"><span class="pre">log_degree_barrier()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.plot_glass_brain"><code class="docutils literal notranslate"><span class="pre">plot_glass_brain()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.remove_blinks_lms"><code class="docutils literal notranslate"><span class="pre">remove_blinks_lms()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.setup_plotter"><code class="docutils literal notranslate"><span class="pre">setup_plotter()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.setup_surface"><code class="docutils literal notranslate"><span class="pre">setup_surface()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.timed"><code class="docutils literal notranslate"><span class="pre">timed()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="ant.tools.html#ant.tools.tools.weight_to_degree_map"><code class="docutils literal notranslate"><span class="pre">weight_to_degree_map()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="ant.tools.html#module-ant.tools">Module contents</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">#</a></h2>
+</section>
+<section id="module-ant.realtime_nf">
+<span id="ant-realtime-nf-module"></span><h2>ant.realtime_nf module<a class="headerlink" href="#module-ant.realtime_nf" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ant.realtime_nf.</span></span><span class="sig-name descname"><span class="pre">NFRealtime</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">subject_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">visit</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">session</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subjects_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">montage</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mri</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subject_fs_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fsaverage'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">subjects_fs_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">filtering</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">l_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">h_freq</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">40.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">artifact_correction</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref_channel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Fp1'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_raw</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">save_nf_signal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_file</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>EEG/Neurofeedback real-time session.</p>
+<p>This class sets up a subject session for real-time EEG/neurofeedback
+processing. It validates inputs, configures session parameters and
+prepares logging. Optional preprocessing settings such as filtering
+and artifact correction can be specified.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>subject_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Unique identifier for the subject. Must be a non-empty string.</p></li>
+<li><p><strong>visit</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Visit number (&gt;= 1).</p></li>
+<li><p><strong>session</strong> (<em>{&quot;baseline&quot;</em><em>, </em><em>&quot;main&quot;}</em>) – Session type.</p></li>
+<li><p><strong>subjects_dir</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Path to the directory containing subject data.</p></li>
+<li><p><strong>montage</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – EEG montage: either a built-in montage or a path to a <code class="docutils literal notranslate"><span class="pre">.bvct</span></code> file.</p></li>
+<li><p><strong>mri</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether MRI data are available.</p></li>
+<li><p><strong>subject_fs_id</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>default &quot;fsaverage&quot;</em>) – FreeSurfer subject ID.</p></li>
+<li><p><strong>subjects_fs_dir</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>None</em><em>, </em><em>default None</em>) – Path to FreeSurfer subjects directory.</p></li>
+<li><p><strong>filtering</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default False</em>) – Whether to apply band-pass filtering.</p></li>
+<li><p><strong>l_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 1.0</em>) – Low-frequency cutoff (Hz).</p></li>
+<li><p><strong>h_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 40.0</em>) – High-frequency cutoff (Hz).</p></li>
+<li><p><strong>artifact_correction</strong> (<em>{False</em><em>, </em><em>&quot;orica&quot;</em><em>, </em><em>&quot;lms&quot;}</em><em>, </em><em>default False</em>) – Artifact-correction method.</p></li>
+<li><p><strong>ref_channel</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>default &quot;Fp1&quot;</em>) – Reference EEG channel in case the artifact_correction method is “lms”.</p></li>
+<li><p><strong>save_raw</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default True</em>) – Whether to save raw EEG data.</p></li>
+<li><p><strong>save_nf_signal</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default True</em>) – Whether to save the neurofeedback signal.</p></li>
+<li><p><strong>config_file</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>None</em><em>, </em><em>default None</em>) – Path to a YAML configuration file. If None, uses the project default.</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em><em>, </em><em>default None</em>) – Logging verbosity level.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If any parameter fails validation.</p>
+</dd>
+<dt class="field-odd">Attributes<span class="colon">:</span></dt>
+<dd class="field-odd"><dl class="simple">
+<dt><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.modality_params" title="ant.realtime_nf.NFRealtime.modality_params"><code class="xref py py-obj docutils literal notranslate"><span class="pre">modality_params</span></code></a></dt><dd><p>Current modality parameters.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+<p class="rubric">Methods</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.compute_inv_operator" title="ant.realtime_nf.NFRealtime.compute_inv_operator"><code class="xref py py-obj docutils literal notranslate"><span class="pre">compute_inv_operator</span></code></a>()</p></td>
+<td><p>Compute and save the inverse operator for source localization.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.connect_to_lsl" title="ant.realtime_nf.NFRealtime.connect_to_lsl"><code class="xref py py-obj docutils literal notranslate"><span class="pre">connect_to_lsl</span></code></a>([chunk_size, mock_lsl, ...])</p></td>
+<td><p>Connect to a Lab Streaming Layer (LSL) EEG stream.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.create_report" title="ant.realtime_nf.NFRealtime.create_report"><code class="xref py py-obj docutils literal notranslate"><span class="pre">create_report</span></code></a>([overwrite])</p></td>
+<td><p>Create an HTML report summarizing the neurofeedback session.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.get_blink_template" title="ant.realtime_nf.NFRealtime.get_blink_template"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_blink_template</span></code></a>([max_iter, method])</p></td>
+<td><p>Identify the eye-blink component from the baseline EEG and store its template.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.get_default_params" title="ant.realtime_nf.NFRealtime.get_default_params"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_default_params</span></code></a>()</p></td>
+<td><p>Default parameters defined in the configuration YAML.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.initiate_brain_plot" title="ant.realtime_nf.NFRealtime.initiate_brain_plot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">initiate_brain_plot</span></code></a>([clim, camera_position, ...])</p></td>
+<td><p>Initialize the 3D brain plot for real-time visualization.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.plot_brain" title="ant.realtime_nf.NFRealtime.plot_brain"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_brain</span></code></a>(data[, interval, mode, freq_range])</p></td>
+<td><p>Plot dynamic brain activation or power.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.plot_rt" title="ant.realtime_nf.NFRealtime.plot_rt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_rt</span></code></a>([bufsize])</p></td>
+<td><p>Visualise raw EEG signals from the LSL stream in real time.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.record_baseline" title="ant.realtime_nf.NFRealtime.record_baseline"><code class="xref py py-obj docutils literal notranslate"><span class="pre">record_baseline</span></code></a>(baseline_duration[, winsize])</p></td>
+<td><p>Record a baseline EEG segment for neurofeedback feature extraction.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.record_main" title="ant.realtime_nf.NFRealtime.record_main"><code class="xref py py-obj docutils literal notranslate"><span class="pre">record_main</span></code></a>(duration[, modality, picks, ...])</p></td>
+<td><p>Record EEG data and extract neural features for neurofeedback.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.run_orica" title="ant.realtime_nf.NFRealtime.run_orica"><code class="xref py py-obj docutils literal notranslate"><span class="pre">run_orica</span></code></a>(n_channels[, learning_rate, ...])</p></td>
+<td><p>Initialize an online ICA (ORICA) instance for real-time artifact removal.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.save" title="ant.realtime_nf.NFRealtime.save"><code class="xref py py-obj docutils literal notranslate"><span class="pre">save</span></code></a>([nf_data, acq_delay, artifact_delay, ...])</p></td>
+<td><p>Save neurofeedback session data to disk.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.scale_down" title="ant.realtime_nf.NFRealtime.scale_down"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scale_down</span></code></a>(ch_idx)</p></td>
+<td><p>Halve the vertical scale for the given channel index.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.scale_up" title="ant.realtime_nf.NFRealtime.scale_up"><code class="xref py py-obj docutils literal notranslate"><span class="pre">scale_up</span></code></a>(ch_idx)</p></td>
+<td><p>Double the vertical scale for the given channel index.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="api.html#ant.realtime_nf.NFRealtime.update_nf_plot" title="ant.realtime_nf.NFRealtime.update_nf_plot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">update_nf_plot</span></code></a>(new_vals[, labels])</p></td>
+<td><p>Update the neurofeedback plot in real time.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.VALID_ARTIFACT_METHODS">
+<span class="sig-name descname"><span class="pre">VALID_ARTIFACT_METHODS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'lms',</span> <span class="pre">'orica',</span> <span class="pre">False}</span></em><a class="headerlink" href="#ant.realtime_nf.NFRealtime.VALID_ARTIFACT_METHODS" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.VALID_SESSIONS">
+<span class="sig-name descname"><span class="pre">VALID_SESSIONS</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{'baseline',</span> <span class="pre">'main'}</span></em><a class="headerlink" href="#ant.realtime_nf.NFRealtime.VALID_SESSIONS" title="Link to this definition">#</a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.compute_inv_operator">
+<span class="sig-name descname"><span class="pre">compute_inv_operator</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.compute_inv_operator" title="Link to this definition">#</a></dt>
+<dd><p>Compute and save the inverse operator for source localization.</p>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Stores the operator in <code class="docutils literal notranslate"><span class="pre">self.inv</span></code>.</p></li>
+<li><p>Saves it under <code class="docutils literal notranslate"><span class="pre">subject_dir/inv/visit_{visit}-inv.fif</span></code>.</p></li>
+</ul>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">compute_inv_operator</span><span class="p">()</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.connect_to_lsl">
+<span class="sig-name descname"><span class="pre">connect_to_lsl</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">chunk_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mock_lsl</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_repeat</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">inf</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bufsize_baseline</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bufsize_main</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acquisition_delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.001</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.connect_to_lsl" title="Link to this definition">#</a></dt>
+<dd><p>Connect to a Lab Streaming Layer (LSL) EEG stream.</p>
+<p>This method connects to a live or mock LSL stream, sets the montage and
+metadata, and exposes the stream’s public methods as attributes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>chunk_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>default 10</em>) – Number of samples per chunk for streaming.</p></li>
+<li><p><strong>mock_lsl</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default False</em>) – If True, stream a pre-recorded EEG file instead of live LSL data.</p></li>
+<li><p><strong>fname</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>Path</em><em> | </em><em>None</em><em>, </em><em>default None</em>) – Path to the EEG file for mock streaming. Uses sample data if None.</p></li>
+<li><p><strong>n_repeat</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default np.inf</em>) – Number of times to repeat the mock recording.</p></li>
+<li><p><strong>bufsize_baseline</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>default 4</em>) – Buffer size for ‘baseline’ sessions.</p></li>
+<li><p><strong>bufsize_main</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>default 3</em>) – Buffer size for ‘main’ sessions.</p></li>
+<li><p><strong>acquisition_delay</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 0.001</em>) – Delay (s) between consecutive acquisition attempts.</p></li>
+<li><p><strong>timeout</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 2.0</em>) – Max time (s) to wait for an LSL connection.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#FileNotFoundError" title="(in Python v3.13)"><strong>FileNotFoundError</strong></a> – If <cite>mock_lsl</cite> is True and the specified <cite>fname</cite> does not exist.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ConnectionError" title="(in Python v3.13)"><strong>ConnectionError</strong></a> – If the LSL stream cannot be connected within <cite>timeout</cite>.</p></li>
+</ul>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.create_report">
+<span class="sig-name descname"><span class="pre">create_report</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">overwrite</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.create_report" title="Link to this definition">#</a></dt>
+<dd><p>Create an HTML report summarizing the neurofeedback session.</p>
+<p>The report includes baseline recordings, EEG sensor visualizations,
+and—if applicable—brain-label figures for source-based modalities.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>overwrite</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True (default), overwrite an existing report file with the same name.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Baseline raw data is added without PSD or butterfly plots.</p></li>
+<li><p>For sensor-space modalities, both 2-D topomap and 3-D sensor layouts are shown.</p></li>
+<li><p>For source-space modalities, brain-label figures are added via</p></li>
+</ul>
+<p><code class="xref py py-func docutils literal notranslate"><span class="pre">plot_glass_brain()</span></code>.
+- The HTML file is saved to <code class="docutils literal notranslate"><span class="pre">&lt;subject_dir&gt;/reports</span></code> with a name containing
+the subject ID, visit number, and modality.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">create_report</span><span class="p">(</span><span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.get_blink_template">
+<span class="sig-name descname"><span class="pre">get_blink_template</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">800</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'infomax'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.get_blink_template" title="Link to this definition">#</a></dt>
+<dd><p>Identify the eye-blink component from the baseline EEG and store its template.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum iterations for ICA fitting. Default is 800.</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>optional</em>) – ICA method to use (e.g., ‘infomax’). Default is ‘infomax’.</p></li>
+<li><p><strong>Sets</strong></p></li>
+<li><p><strong>----</strong></p></li>
+<li><p><strong>self.blink_template</strong> (<em>np.ndarray</em>) – Spatial topography of the ICA component corresponding to eye blinks.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">get_blink_template</span><span class="p">(</span><span class="n">max_iter</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s2">&quot;fastica&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.get_default_params">
+<span class="sig-name descname"><span class="pre">get_default_params</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.get_default_params" title="Link to this definition">#</a></dt>
+<dd><p>Default parameters defined in the configuration YAML.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Default parameters for all neural-feature modalities.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.initiate_brain_plot">
+<span class="sig-name descname"><span class="pre">initiate_brain_plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">clim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0,</span> <span class="pre">0.6]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">camera_position</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'yz'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">azimuth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">45</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.initiate_brain_plot" title="Link to this definition">#</a></dt>
+<dd><p>Initialize the 3D brain plot for real-time visualization.</p>
+<p>This method sets up the cortical surface mesh, scalar arrays,
+and vertex indices for both hemispheres. It then initializes
+the PyVista plotter to visualize brain activation.</p>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The <cite>subjects_dir</cite> currently points to a fixed FreeSurfer directory.</p></li>
+</ul>
+<p>Update this path as needed.
+- The method calls <cite>setup_surface</cite> to generate surface mesh data
+and <cite>setup_plotter</cite> to create the PyVista plotter.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.modality_params">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">modality_params</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><span class="pre">dict</span></a></em><a class="headerlink" href="#ant.realtime_nf.NFRealtime.modality_params" title="Link to this definition">#</a></dt>
+<dd><p>Current modality parameters.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns<span class="colon">:</span></dt>
+<dd class="field-odd"><p>Dictionary with the current neural-feature modality parameters.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.plot_brain">
+<span class="sig-name descname"><span class="pre">plot_brain</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interval</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.05</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'activation'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_range</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(8.0,</span> <span class="pre">13.0)</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.plot_brain" title="Link to this definition">#</a></dt>
+<dd><p>Plot dynamic brain activation or power.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_times</em><em>)</em>) – EEG/MEG data in volts.</p></li>
+<li><p><strong>interval</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Pause (s) between updates in the animation.</p></li>
+<li><p><strong>mode</strong> (<em>{'activation'</em><em>, </em><em>'power'}</em>) – ‘activation’  -&gt; show source activation (original behaviour).
+‘power’       -&gt; show band-limited source power.</p></li>
+<li><p><strong>freq_range</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><em>tuple</em></a><em> of </em><em>(</em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>)</em>) – Frequency range (fmin, fmax) in Hz to compute power.
+Used only if mode=’power’.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.plot_rt">
+<span class="sig-name descname"><span class="pre">plot_rt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bufsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.2</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.plot_rt" title="Link to this definition">#</a></dt>
+<dd><p>Visualise raw EEG signals from the LSL stream in real time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>bufsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Buffer/window size in seconds for the StreamReceiver display.
+Default is 0.2 s.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>Uses <code class="xref py py-class docutils literal notranslate"><span class="pre">mne_lsl.stream_viewer.StreamViewer</span></code> to create
+a real-time display of the EEG stream.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">plot_rt</span><span class="p">(</span><span class="n">bufsize</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.record_baseline">
+<span class="sig-name descname"><span class="pre">record_baseline</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">baseline_duration</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">winsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">3.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.record_baseline" title="Link to this definition">#</a></dt>
+<dd><p>Record a baseline EEG segment for neurofeedback feature extraction.</p>
+<p>Continuously streams data from the LSL connection for the given duration,
+fetching samples in chunks of length <code class="docutils literal notranslate"><span class="pre">winsize</span></code> seconds. The baseline is
+saved to disk as a Raw FIF file and an inverse operator is computed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>baseline_duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Desired duration of the baseline recording in seconds.</p></li>
+<li><p><strong>winsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 3.0</em>) – Size of each data window (seconds) fetched from the buffer.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>The method saves the baseline data and updates:
+* <code class="docutils literal notranslate"><span class="pre">self.raw_baseline</span></code> : mne.io.Raw
+The recorded baseline as a Raw object.
+* Internal inverse operator via <code class="docutils literal notranslate"><span class="pre">self.compute_inv_operator()</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Output file: <code class="docutils literal notranslate"><span class="pre">&lt;subject_dir&gt;/baseline/visit_&lt;visit&gt;-raw.fif</span></code>.</p></li>
+<li><p>The LSL stream remains connected after this method completes.</p></li>
+</ul>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.record_main">
+<span class="sig-name descname"><span class="pre">record_main</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">duration</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modality</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sensor_power'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">picks</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">winsize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">estimate_delays</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modality_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_raw_signal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_nf_signal</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time_window</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_brain_activation</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">show_design_viz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">design_viz</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'VisualRorschach'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_ring_buffer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.record_main" title="Link to this definition">#</a></dt>
+<dd><p>Record EEG data and extract neural features for neurofeedback.</p>
+<p>Streams EEG data from the LSL connection for <code class="docutils literal notranslate"><span class="pre">duration</span></code> seconds,
+applies the chosen feature-extraction modality (or list of modalities),
+and optionally visualizes the neurofeedback signal in real time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Desired recording length in seconds.</p></li>
+<li><p><strong>modality</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.13)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>default 'sensor_power'</em>) – Neurofeedback feature(s) to extract.</p></li>
+<li><p><strong>picks</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.13)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>None</em><em>, </em><em>default None</em>) – Channel names to include. If None, all channels are used.</p></li>
+<li><p><strong>winsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 1.0</em>) – Window size in seconds for fetching data from the buffer.</p></li>
+<li><p><strong>estimate_delays</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default False</em>) – If True, acquisition, artifact, method, and plot delays are measured.</p></li>
+<li><p><strong>modality_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em> | </em><em>None</em><em>, </em><em>default None</em>) – Optional parameter overrides for each modality.</p></li>
+<li><p><strong>show_raw_signal</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default True</em>) – Show real-time raw EEG signal plot.</p></li>
+<li><p><strong>show_nf_signal</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default True</em>) – Show real-time neurofeedback feature plot.</p></li>
+<li><p><strong>time_window</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default 10.0</em>) – Length of time window (seconds) displayed in the NF plot.</p></li>
+<li><p><strong>show_design_viz</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default True</em>) – Show the neurofeedback “design” visualization (e.g., py5 sketch).</p></li>
+<li><p><strong>design_viz</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>default 'VisualRorschach'</em>) – Name of the visualization preset.</p></li>
+<li><p><strong>use_ring_buffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default False</em>) – If True, use ring-buffer processing instead of fixed winsize pulls.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.13)"><strong>NotImplementedError</strong></a> – If a requested modality is not implemented.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#AssertionError" title="(in Python v3.13)"><strong>AssertionError</strong></a> – If a source-based modality is used with non-None <code class="docutils literal notranslate"><span class="pre">picks</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.13)"><code class="xref py py-obj docutils literal notranslate"><span class="pre">None</span></code></a></span></p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Baseline artifact correction supports ‘lms’ or ‘orica’.</p></li>
+<li><p>Real-time visualization uses PyQt6 + pyqtgraph.</p></li>
+</ul>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">record_main</span><span class="p">(</span><span class="n">duration</span><span class="o">=</span><span class="mi">120</span><span class="p">,</span>
+<span class="gp">... </span>                    <span class="n">modality</span><span class="o">=</span><span class="s2">&quot;sensor_power&quot;</span><span class="p">,</span>
+<span class="gp">... </span>                    <span class="n">picks</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;C3&quot;</span><span class="p">,</span> <span class="s2">&quot;C4&quot;</span><span class="p">],</span>
+<span class="gp">... </span>                    <span class="n">winsize</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.run_orica">
+<span class="sig-name descname"><span class="pre">run_orica</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_channels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">256</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">online_whitening</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">calibrate_pca</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">forgetfac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nonlinearity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'tanh'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.run_orica" title="Link to this definition">#</a></dt>
+<dd><p>Initialize an online ICA (ORICA) instance for real-time artifact removal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_channels</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of EEG channels to include.</p></li>
+<li><p><strong>learning_rate</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Learning rate for online ICA updates.</p></li>
+<li><p><strong>block_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of samples processed per update.</p></li>
+<li><p><strong>online_whitening</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – Whether to apply online whitening to the data.</p></li>
+<li><p><strong>calibrate_pca</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – If True, calibrates PCA before running ICA.</p></li>
+<li><p><strong>forgetfac</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Forgetting factor for ORICA update (1.0 means no forgetting).</p></li>
+<li><p><strong>nonlinearity</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Nonlinearity function used in ICA (e.g., ‘tanh’, ‘cube’).</p></li>
+<li><p><strong>random_state</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>) – Random seed for reproducibility.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>After initialization, use <code class="docutils literal notranslate"><span class="pre">self.orica.transform(data_chunk)</span></code> to process data
+and optionally remove identified artifact components.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">run_orica</span><span class="p">(</span><span class="n">n_channels</span><span class="o">=</span><span class="mi">64</span><span class="p">,</span> <span class="n">learning_rate</span><span class="o">=</span><span class="mf">0.05</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.save">
+<span class="sig-name descname"><span class="pre">save</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nf_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">acq_delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">artifact_delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_delay</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">raw_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">format</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'json'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.save" title="Link to this definition">#</a></dt>
+<dd><p>Save neurofeedback session data to disk.</p>
+<p>Disconnects the LSL stream and writes neurofeedback results, delay metrics,
+and (optionally) raw EEG data to the subject directory.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>nf_data</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, save the neurofeedback data. Default is True.</p></li>
+<li><p><strong>acq_delay</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, save acquisition delay data. Default is True.</p></li>
+<li><p><strong>artifact_delay</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, save artifact-related delay data. Default is True.</p></li>
+<li><p><strong>method_delay</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, save method delay data. Default is True.</p></li>
+<li><p><strong>raw_data</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – If True, save raw EEG data. (Not implemented.) Default is False.</p></li>
+<li><p><strong>format</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>optional</em>) – File format to save the data. Currently only <code class="docutils literal notranslate"><span class="pre">'json'</span></code> is supported. Default is <code class="docutils literal notranslate"><span class="pre">'json'</span></code>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#NotImplementedError" title="(in Python v3.13)"><strong>NotImplementedError</strong></a> – If <code class="docutils literal notranslate"><span class="pre">raw_data=True</span></code>, since saving raw EEG data is not yet implemented.</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>Creates the folders <code class="docutils literal notranslate"><span class="pre">neurofeedback</span></code>, <code class="docutils literal notranslate"><span class="pre">delays</span></code>, <code class="docutils literal notranslate"><span class="pre">main</span></code>, and <code class="docutils literal notranslate"><span class="pre">reports</span></code></p></li>
+</ul>
+<p>inside <code class="docutils literal notranslate"><span class="pre">self.subject_dir</span></code> if they do not exist.
+- JSON files are named using the subject ID and visit number.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">nf_data</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">acq_delay</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">raw_data</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.scale_down">
+<span class="sig-name descname"><span class="pre">scale_down</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ch_idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.scale_down" title="Link to this definition">#</a></dt>
+<dd><p>Halve the vertical scale for the given channel index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.scale_up">
+<span class="sig-name descname"><span class="pre">scale_up</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">ch_idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.scale_up" title="Link to this definition">#</a></dt>
+<dd><p>Double the vertical scale for the given channel index.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.realtime_nf.NFRealtime.update_nf_plot">
+<span class="sig-name descname"><span class="pre">update_nf_plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_vals</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">labels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.realtime_nf.NFRealtime.update_nf_plot" title="Link to this definition">#</a></dt>
+<dd><p>Update the neurofeedback plot in real time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>new_vals</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.13)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em> | </em><em>ndarray</em>) – Latest neural-feature values for each modality,
+e.g. <code class="docutils literal notranslate"><span class="pre">[sensor_power_last,</span> <span class="pre">band_ratio_last]</span></code>.</p></li>
+<li><p><strong>labels</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.13)"><em>list</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>None</em>) – Labels for each modality to display on the y-axis.
+Example: <code class="docutils literal notranslate"><span class="pre">[&quot;Sensor</span> <span class="pre">Power&quot;,</span> <span class="pre">&quot;Band</span> <span class="pre">Ratio&quot;]</span></code>.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>On the first call the plot data structures and y-axis ticks</p></li>
+</ul>
+<p>are created; subsequent calls simply roll and update the data.
+- Values are normalised by the modality-specific scaling factors
+in <code class="docutils literal notranslate"><span class="pre">self.scales_dict</span></code> and vertically offset by <code class="docutils literal notranslate"><span class="pre">self.shifts</span></code>
+so that multiple modalities can be visualised together.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">session</span><span class="o">.</span><span class="n">update_nf_plot</span><span class="p">([</span><span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.7</span><span class="p">],</span> <span class="n">labels</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;Sensor Power&quot;</span><span class="p">,</span> <span class="s2">&quot;Band Ratio&quot;</span><span class="p">])</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-ant">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-ant" title="Link to this heading">#</a></h2>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="index.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">&lt;no title&gt;</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="ant.tools.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">ant.tools package</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#subpackages">Subpackages</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#submodules">Submodules</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant.realtime_nf">ant.realtime_nf module</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime"><code class="docutils literal notranslate"><span class="pre">NFRealtime</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.VALID_ARTIFACT_METHODS"><code class="docutils literal notranslate"><span class="pre">NFRealtime.VALID_ARTIFACT_METHODS</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.VALID_SESSIONS"><code class="docutils literal notranslate"><span class="pre">NFRealtime.VALID_SESSIONS</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.compute_inv_operator"><code class="docutils literal notranslate"><span class="pre">NFRealtime.compute_inv_operator()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.connect_to_lsl"><code class="docutils literal notranslate"><span class="pre">NFRealtime.connect_to_lsl()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.create_report"><code class="docutils literal notranslate"><span class="pre">NFRealtime.create_report()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.get_blink_template"><code class="docutils literal notranslate"><span class="pre">NFRealtime.get_blink_template()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.get_default_params"><code class="docutils literal notranslate"><span class="pre">NFRealtime.get_default_params()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.initiate_brain_plot"><code class="docutils literal notranslate"><span class="pre">NFRealtime.initiate_brain_plot()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.modality_params"><code class="docutils literal notranslate"><span class="pre">NFRealtime.modality_params</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.plot_brain"><code class="docutils literal notranslate"><span class="pre">NFRealtime.plot_brain()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.plot_rt"><code class="docutils literal notranslate"><span class="pre">NFRealtime.plot_rt()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.record_baseline"><code class="docutils literal notranslate"><span class="pre">NFRealtime.record_baseline()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.record_main"><code class="docutils literal notranslate"><span class="pre">NFRealtime.record_main()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.run_orica"><code class="docutils literal notranslate"><span class="pre">NFRealtime.run_orica()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.save"><code class="docutils literal notranslate"><span class="pre">NFRealtime.save()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.scale_down"><code class="docutils literal notranslate"><span class="pre">NFRealtime.scale_down()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.scale_up"><code class="docutils literal notranslate"><span class="pre">NFRealtime.scale_up()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.realtime_nf.NFRealtime.update_nf_plot"><code class="docutils literal notranslate"><span class="pre">NFRealtime.update_nf_plot()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant">Module contents</a></li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/ant.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Payam S. Shabestari.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.16.1.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>

@@ -1,0 +1,1013 @@
+
+<!DOCTYPE html>
+
+
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>ant.tools package &#8212; ANT</title>
+  
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery.css?v=d2d258e8" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-binder.css?v=f4aeca0c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-dataframe.css?v=2082cf3c" />
+    <link rel="stylesheet" type="text/css" href="_static/sg_gallery-rendered-html.css?v=1277b6f3" />
+    <link rel="stylesheet" type="text/css" href="_static/custom.css?v=842c8da3" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=01f34227"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'ant.tools';</script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Examples Gallery" href="auto_examples/index.html" />
+    <link rel="prev" title="ant package" href="ant.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
+
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
+
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search the docs ..."
+         aria-label="Search the docs ..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
+</div>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+<div class="bd-header__inner bd-page-width">
+  <button class="pst-navbar-icon sidebar-toggle primary-toggle" aria-label="Site navigation">
+    <span class="fa-solid fa-bars"></span>
+  </button>
+  
+  
+  <div class="col-lg-3 navbar-header-items__start">
+    
+      <div class="navbar-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="index.html">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">ANT</p>
+  
+</a></div>
+    
+  </div>
+  
+  <div class="col-lg-9 navbar-header-items">
+    
+    <div class="me-auto navbar-header-items__center">
+      
+        <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="ant.html">
+    API Reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="auto_examples/index.html">
+    Examples
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+      
+    </div>
+    
+    
+    <div class="navbar-header-items__end">
+      
+        <div class="navbar-item navbar-persistent--container">
+          
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+        </div>
+      
+      
+        <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+      
+    </div>
+    
+  </div>
+  
+  
+    <div class="navbar-persistent--mobile">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button>
+    </div>
+  
+
+  
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
+</div>
+
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+      <div class="sidebar-header-items__center">
+        
+          
+          
+            <div class="navbar-item">
+<nav>
+  <ul class="bd-navbar-elements navbar-nav">
+    
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="ant.html">
+    API Reference
+  </a>
+</li>
+
+
+<li class="nav-item ">
+  <a class="nav-link nav-internal" href="auto_examples/index.html">
+    Examples
+  </a>
+</li>
+
+  </ul>
+</nav></div>
+          
+        
+      </div>
+    
+    
+    
+      <div class="sidebar-header-items__end">
+        
+          <div class="navbar-item">
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button></div>
+        
+      </div>
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+<nav class="bd-docs-nav bd-links"
+     aria-label="Section Navigation">
+  <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
+  <div class="bd-toc-item navbar-nav"></div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
+      </div>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item">
+
+<nav aria-label="Breadcrumb" class="d-print-none">
+  <ul class="bd-breadcrumbs">
+    
+    <li class="breadcrumb-item breadcrumb-home">
+      <a href="index.html" class="nav-link" aria-label="Home">
+        <i class="fa-solid fa-home"></i>
+      </a>
+    </li>
+    
+    <li class="breadcrumb-item"><a href="ant.html" class="nav-link">ant package</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">ant.tools package</span></li>
+  </ul>
+</nav>
+</div>
+      
+    </div>
+  
+  
+</div>
+</div>
+              
+              
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="ant-tools-package">
+<h1>ant.tools package<a class="headerlink" href="#ant-tools-package" title="Link to this heading">#</a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">#</a></h2>
+</section>
+<section id="module-ant.tools.orica">
+<span id="ant-tools-orica-module"></span><h2>ant.tools.orica module<a class="headerlink" href="#module-ant.tools.orica" title="Link to this heading">#</a></h2>
+<dl class="py class">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">ant.tools.orica.</span></span><span class="sig-name descname"><span class="pre">ORICA</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_channels</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">learning_rate</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">256</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">online_whitening</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">calibrate_pca</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">forgetfac</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1.0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nonlinearity</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'tanh'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">random_state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <a class="reference external" href="https://docs.python.org/3/library/functions.html#object" title="(in Python v3.13)"><code class="xref py py-class docutils literal notranslate"><span class="pre">object</span></code></a></p>
+<p>Online Recursive ICA (ORICA) for EEG data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n_channels</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of input EEG channels.</p></li>
+<li><p><strong>learning_rate</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Learning rate for ICA updates.</p></li>
+<li><p><strong>block_size</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Size of blocks for online updates.</p></li>
+<li><p><strong>online_whitening</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – If True, perform online whitening. If False, assumes input is already whitened.</p></li>
+<li><p><strong>calibrate_pca</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a>) – If True, estimate whitening matrix from initial block and fix it.
+If False, update recursively.</p></li>
+<li><p><strong>forgetfac</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Forgetting factor for online covariance (0 &lt; forgetfac &lt;= 1).
+Values &lt; 1 allow adaptation to nonstationary signals.</p></li>
+<li><p><strong>nonlinearity</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Nonlinearity function: ‘tanh’, ‘pow3’, or ‘gauss’.</p></li>
+<li><p><strong>random_state</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>) – Seed for reproducibility.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Methods</p>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table autosummary">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ant.tools.orica.ORICA.find_blink_ic" title="ant.tools.orica.ORICA.find_blink_ic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">find_blink_ic</span></code></a>(template_map[, threshold])</p></td>
+<td><p>Identify independent components corresponding to blinks.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ant.tools.orica.ORICA.fit_transform" title="ant.tools.orica.ORICA.fit_transform"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit_transform</span></code></a>(X)</p></td>
+<td><p>Fit ORICA to the data block <cite>X</cite> and return the estimated sources.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ant.tools.orica.ORICA.inverse_transform" title="ant.tools.orica.ORICA.inverse_transform"><code class="xref py py-obj docutils literal notranslate"><span class="pre">inverse_transform</span></code></a>(X)</p></td>
+<td><p>Reconstruct EEG data from the estimated sources.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#ant.tools.orica.ORICA.partial_fit" title="ant.tools.orica.ORICA.partial_fit"><code class="xref py py-obj docutils literal notranslate"><span class="pre">partial_fit</span></code></a>(X)</p></td>
+<td><p>Update the unmixing matrix with a new block of EEG data using online ICA.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#ant.tools.orica.ORICA.transform" title="ant.tools.orica.ORICA.transform"><code class="xref py py-obj docutils literal notranslate"><span class="pre">transform</span></code></a>(X)</p></td>
+<td><p>Apply the learned unmixing matrix to new data without updating it.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA.find_blink_ic">
+<span class="sig-name descname"><span class="pre">find_blink_ic</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">template_map</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">threshold</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.7</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA.find_blink_ic" title="Link to this definition">#</a></dt>
+<dd><p>Identify independent components corresponding to blinks.</p>
+<p>Correlates each column of the mixing matrix <cite>A</cite> with a blink template map
+to detect blink-related components.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>template_map</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>,</em><em>)</em>) – Template topography of a blink (e.g., from frontal electrodes).</p></li>
+<li><p><strong>threshold</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>default=0.7</em>) – Correlation threshold above which a component is considered blink-related.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>blink_idx</strong> (<em>list of int</em>) – Indices of independent components likely corresponding to blinks.</p></li>
+<li><p><strong>corrs</strong> (<em>ndarray, shape (n_components,)</em>) – Correlation values between each component and the blink template.</p></li>
+</ul>
+</p>
+</dd>
+<dt class="field-odd">Raises<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#RuntimeError" title="(in Python v3.13)"><strong>RuntimeError</strong></a> – If the ORICA model has not been fitted yet.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA.fit_transform">
+<span class="sig-name descname"><span class="pre">fit_transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA.fit_transform" title="Link to this definition">#</a></dt>
+<dd><p>Fit ORICA to the data block <cite>X</cite> and return the estimated sources.</p>
+<p>This is equivalent to calling <cite>partial_fit(X)</cite> followed by <cite>transform(X)</cite>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_samples</em><em>)</em>) – EEG data block.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>S</strong> – The estimated source signals.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (n_channels, n_samples)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA.inverse_transform">
+<span class="sig-name descname"><span class="pre">inverse_transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA.inverse_transform" title="Link to this definition">#</a></dt>
+<dd><p>Reconstruct EEG data from the estimated sources.</p>
+<p>This uses the pseudo-inverse of the unmixing matrix <cite>W</cite> to project
+source signals back to the sensor space. The channel mean is added back
+if available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>S</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_samples</em><em>)</em>) – Source signals to reconstruct.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>X_rec</strong> – Reconstructed EEG data in sensor space.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (n_channels, n_samples)</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#RuntimeError" title="(in Python v3.13)"><strong>RuntimeError</strong></a> – If the ORICA model has not been fitted yet.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA.partial_fit">
+<span class="sig-name descname"><span class="pre">partial_fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA.partial_fit" title="Link to this definition">#</a></dt>
+<dd><p>Update the unmixing matrix with a new block of EEG data using online ICA.</p>
+<p>This method performs one iteration of the ORICA algorithm, updating the
+unmixing matrix <cite>W</cite> incrementally with the provided data block <cite>X</cite>. It
+handles online whitening if enabled and maintains stability via QR
+decomposition.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_samples</em><em>)</em>) – A block of EEG data. Each row corresponds to one channel.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>self</strong> – The updated ORICA instance with the new unmixing matrix.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>instance of <a class="reference internal" href="#ant.tools.orica.ORICA" title="ant.tools.orica.ORICA">ORICA</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If <cite>X</cite> does not have the expected number of channels.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="ant.tools.orica.ORICA.transform">
+<span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.orica.ORICA.transform" title="Link to this definition">#</a></dt>
+<dd><p>Apply the learned unmixing matrix to new data without updating it.</p>
+<p>This projects EEG data onto the source space using the current <cite>W</cite>.
+Online whitening is applied if enabled. No adaptation of <cite>W</cite> occurs.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>X</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_samples</em><em>)</em>) – EEG data to transform.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>S</strong> – The estimated source signals.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (n_channels, n_samples)</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="module-ant.tools.simulation">
+<span id="ant-tools-simulation-module"></span><h2>ant.tools.simulation module<a class="headerlink" href="#module-ant.tools.simulation" title="Link to this heading">#</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.simulation.simulate_eeg_raw">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.simulation.</span></span><span class="sig-name descname"><span class="pre">simulate_eeg_raw</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">brain_label</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">frequency</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">amplitude</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">duration</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gap_duration</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_repetition</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">iir_filter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0.2,</span> <span class="pre">-0.2,</span> <span class="pre">0.04]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fname_save</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.simulation.simulate_eeg_raw" title="Link to this definition">#</a></dt>
+<dd><p>Simulate EEG data with a sinusoidal source in a given brain label.</p>
+<p>A forward solution is created for <code class="docutils literal notranslate"><span class="pre">fsaverage</span></code> and a sinusoidal source
+is injected into the specified brain label. The simulated signal is then
+projected to sensor space, optionally repeated with gaps, and saved as
+an MNE Raw object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>brain_label</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name (regexp) of the cortical label in which to simulate the source.</p></li>
+<li><p><strong>frequency</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Frequency of the simulated sine wave (Hz).</p></li>
+<li><p><strong>amplitude</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Amplitude scaling factor of the simulated signal.</p></li>
+<li><p><strong>duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Duration of each simulated signal epoch in seconds.</p></li>
+<li><p><strong>gap_duration</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Interval (in seconds) between consecutive signal epochs.</p></li>
+<li><p><strong>n_repetition</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of signal epochs to simulate.</p></li>
+<li><p><strong>start</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Start time of the first simulated signal, in seconds.</p></li>
+<li><p><strong>iir_filter</strong> (<em>array_like</em>) – IIR filter coefficients (denominator) used when adding noise.</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>) – Control verbosity of the logging output.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>raw</strong> – The simulated raw EEG object.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>instance of mne.io.Raw</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The simulated raw file is also written to disk in the <code class="docutils literal notranslate"><span class="pre">data/simulated</span></code>
+subdirectory, with a filename that includes the brain label, frequency,
+and amplitude.</p>
+<p class="rubric">Examples</p>
+<div class="doctest highlight-default notranslate"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="n">raw</span> <span class="o">=</span> <span class="n">simulate_eeg_raw</span><span class="p">(</span><span class="s1">&#39;bankssts-lh&#39;</span><span class="p">,</span> <span class="n">frequency</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">amplitude</span><span class="o">=</span><span class="mf">1e-9</span><span class="p">,</span>
+<span class="gp">... </span>                       <span class="n">duration</span><span class="o">=</span><span class="mf">2.</span><span class="p">,</span> <span class="n">gap_duration</span><span class="o">=</span><span class="mf">1.</span><span class="p">,</span> <span class="n">n_repetition</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
+<span class="gp">... </span>                       <span class="n">start</span><span class="o">=</span><span class="mf">0.</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">raw</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+<section id="module-ant.tools.tools">
+<span id="ant-tools-tools-module"></span><h2>ant.tools.tools module<a class="headerlink" href="#module-ant.tools.tools" title="Link to this heading">#</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.butter_bandpass">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">butter_bandpass</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">l_freq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">h_freq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sfreq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">order</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.butter_bandpass" title="Link to this definition">#</a></dt>
+<dd><p>Design a Butterworth band-pass filter.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>l_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Low cut-off frequency in Hz.</p></li>
+<li><p><strong>h_freq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – High cut-off frequency in Hz.</p></li>
+<li><p><strong>sfreq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Sampling frequency in Hz.</p></li>
+<li><p><strong>order</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Order of the Butterworth filter.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>sos</strong> – Second-order sections representation of the band-pass filter,
+suitable for use with <code class="xref py py-func docutils literal notranslate"><span class="pre">scipy.signal.sosfiltfilt()</span></code>.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.compute_bandpower">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">compute_bandpower</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sfreq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">band</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'fft'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">relative</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">window</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'hann'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_fft</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.compute_bandpower" title="Link to this definition">#</a></dt>
+<dd><p>Compute the bandpower of EEG/MEG channels using various PSD estimation methods.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>ndarray</em><em>, </em><em>shape</em><em> (</em><em>n_channels</em><em>, </em><em>n_samples</em><em>)</em>) – Input time series data.</p></li>
+<li><p><strong>sfreq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Sampling frequency in Hz.</p></li>
+<li><p><strong>band</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><em>tuple</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Frequency band of interest (low, high) in Hz.</p></li>
+<li><p><strong>method</strong> (<em>{'fft'</em><em>, </em><em>'periodogram'</em><em>, </em><em>'welch'</em><em>, </em><em>'multitaper'}</em><em>, </em><em>default='fft'</em>) – PSD estimation method.</p></li>
+<li><p><strong>relative</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>default=True</em>) – Normalize by total power if True.</p></li>
+<li><p><strong>window</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>default='hann'</em>) – Window type (used only for ‘fft’).</p></li>
+<li><p><strong>n_fft</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em> | </em><em>None</em>) – Number of FFT points (used only for ‘fft’).</p></li>
+<li><p><strong>**kwargs</strong> (<em>additional keyword arguments</em>) – Passed to the respective PSD functions.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>bandpower</strong> – Bandpower of each channel in the requested frequency band.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray, shape (n_channels,)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.compute_fft">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">compute_fft</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sfreq</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">winsize</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_range</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_res</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.compute_fft" title="Link to this definition">#</a></dt>
+<dd><p>Compute FFT-related quantities for spectral analysis.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sfreq</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Sampling frequency in Hz.</p></li>
+<li><p><strong>winsize</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Window size in seconds.</p></li>
+<li><p><strong>freq_range</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><em>tuple</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Frequency range of interest (low, high) in Hz.</p></li>
+<li><p><strong>freq_res</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – Frequency resolution factor. Default is 1.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>fft_window</strong> (<em>ndarray, shape (n_times,)</em>) – Hanning window of length <code class="docutils literal notranslate"><span class="pre">winsize</span> <span class="pre">*</span> <span class="pre">sfreq</span></code> in samples.</p></li>
+<li><p><strong>freq_band</strong> (<em>ndarray, shape (n_freqs,)</em>) – Array of frequencies within the specified range.</p></li>
+<li><p><strong>freq_band_idxs</strong> (<em>ndarray, shape (n_freqs,)</em>) – Indices of <code class="docutils literal notranslate"><span class="pre">frequencies</span></code> corresponding to <code class="docutils literal notranslate"><span class="pre">freq_band</span></code>.</p></li>
+<li><p><strong>frequencies</strong> (<em>ndarray, shape (n_freqs_total,)</em>) – Array of frequencies from the FFT across the full spectrum.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.create_blink_template">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">create_blink_template</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">raw</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">800</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'infomax'</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.create_blink_template" title="Link to this definition">#</a></dt>
+<dd><p>Create a template for eye blink ICA component from raw EEG data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>raw</strong> (<em>mne.io.Raw</em>) – The raw EEG data.</p></li>
+<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a><em>, </em><em>optional</em>) – Maximum number of iterations for the ICA fitting. Default is 800.</p></li>
+<li><p><strong>method</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em>, </em><em>optional</em>) – ICA method to use. Default is “infomax”.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>template_blink_comp</strong> – The spatial topography of the ICA component corresponding to the blink
+(shape: n_channels x 1). If no blink component is detected, returns None.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.estimate_aperiodic_component">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">estimate_aperiodic_component</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">raw_baseline</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">picks</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">freq_range</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">(1,</span> <span class="pre">20)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.estimate_aperiodic_component" title="Link to this definition">#</a></dt>
+<dd><p>Estimate the aperiodic (1/f) component of a PSD using FOOOF.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>raw_baseline</strong> (<em>mne.io.BaseRaw</em>) – MNE Raw object containing baseline data.</p></li>
+<li><p><strong>picks</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.13)"><em>list</em></a>) – Channels to include in PSD computation.</p></li>
+<li><p><strong>psd_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a>) – Parameters passed to <cite>raw_baseline.compute_psd()</cite>.</p></li>
+<li><p><strong>freq_range</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#tuple" title="(in Python v3.13)"><em>tuple</em></a><em> of </em><a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a><em>, </em><em>optional</em><em> (</em><em>default=</em><em>(</em><em>1</em><em>, </em><em>20</em><em>)</em><em>)</em>) – Frequency range in Hz for fitting the model.</p></li>
+<li><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.13)"><em>bool</em></a><em>, </em><em>optional</em>) – Whether to print FOOOF fitting progress.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>aperiodic_params</strong> (<em>ndarray</em>) – Parameters of the aperiodic component (offset, slope, knee if used).</p></li>
+<li><p><strong>peak_params</strong> (<em>ndarray</em>) – Parameters of oscillatory peaks identified in the spectrum.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.get_canonical_freqs">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">get_canonical_freqs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frange_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.get_canonical_freqs" title="Link to this definition">#</a></dt>
+<dd><p>Map a canonical frequency band name to its frequency range.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>frange_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name of the frequency band. Supported values include:
+‘delta’, ‘theta’, ‘alpha’, ‘lower_alpha’, ‘upper_alpha’,
+‘smr’, ‘beta’, ‘lower_beta’, ‘upper_beta’,
+‘gamma’, ‘lower_gamma’, ‘upper_gamma’.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Two-element list containing [low_freq, high_freq] in Hz.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>List[<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)">float</a>]</p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If the provided frequency band name is not defined.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.get_params">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">get_params</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modality</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">modality_params</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.get_params" title="Link to this definition">#</a></dt>
+<dd><p>Load and update parameters for a given neurofeedback (NF) modality.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>config_file</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>path-like</em>) – Path to the YAML configuration file containing modality parameters.</p></li>
+<li><p><strong>modality</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name of the neurofeedback modality. Must be present in the
+<code class="docutils literal notranslate"><span class="pre">NF_modality</span></code> section of the config file.</p></li>
+<li><p><strong>modality_params</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)"><em>dict</em></a><em> | </em><em>None</em>) – Optional dictionary with parameter overrides. The keys should be method
+names (e.g., “fft”, “welch”), and the values should be dictionaries
+with parameter key-value pairs to update.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>params</strong> – Dictionary containing updated parameters for the specified modality.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.13)">dict</a></p>
+</dd>
+<dt class="field-even">Raises<span class="colon">:</span></dt>
+<dd class="field-even"><ul class="simple">
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If the modality is not found in the config file.</p></li>
+<li><p><a class="reference external" href="https://docs.python.org/3/library/exceptions.html#ValueError" title="(in Python v3.13)"><strong>ValueError</strong></a> – If a provided method in <code class="docutils literal notranslate"><span class="pre">modality_params</span></code> is not available
+for the given modality.</p></li>
+</ul>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function first loads default parameters for the requested modality
+from the YAML file. If <code class="docutils literal notranslate"><span class="pre">modality_params</span></code> is provided, the defaults
+are updated with the user-specified overrides.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.log_degree_barrier">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">log_degree_barrier</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">signals</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dist_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alpha</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">beta</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">step</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">max_iter</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">10000</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rtol</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1e-16</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">w0</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.log_degree_barrier" title="Link to this definition">#</a></dt>
+<dd><p>Graph learning with a log-barrier degree constraint.</p>
+<p>Builds a weighted graph from smooth signals by solving a convex
+optimization problem with:
+- distance fitting,
+- log-barrier enforcing non-degenerate node degrees,
+- quadratic regularization on edge weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>signals</strong> (<em>array</em><em> of </em><em>shape</em><em> (</em><em>n_nodes</em><em>, </em><em>n_samples</em><em>)</em>) – Input data (node-wise signals).</p></li>
+<li><p><strong>dist_type</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Distance metric to use (passed to <code class="docutils literal notranslate"><span class="pre">scipy.spatial.distance.pdist</span></code>).</p></li>
+<li><p><strong>alpha</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Weight of the log-barrier degree penalty.</p></li>
+<li><p><strong>beta</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Weight of the L2 regularization term.</p></li>
+<li><p><strong>step</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Initial step size for the optimization.</p></li>
+<li><p><strong>w0</strong> (<em>array</em><em> or </em><em>None</em>) – Initial edge weights. If None, initialized to zeros.</p></li>
+<li><p><strong>max_iter</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Maximum number of iterations for the solver.</p></li>
+<li><p><strong>rtol</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Relative tolerance for convergence.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>graph_matrix</strong> – Learned adjacency matrix of the graph.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>ndarray of shape (n_nodes, n_nodes)</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul>
+<li><p>Uses MLF-BF primal-dual solver (external <cite>solvers</cite> package).</p></li>
+<li><p>Relies on <cite>functions.func</cite> objects with custom eval/prox/grad.</p></li>
+<li><p>The optimization problem solved is of the form:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>min_w  2 &lt;w, z&gt; - α Σ log(k(w)) + β ||w||²
+</pre></div>
+</div>
+</li>
+</ul>
+<p>where z are normalized pairwise distances and k(w) maps edge
+weights to node degrees.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.plot_glass_brain">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">plot_glass_brain</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bl1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bl2</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.plot_glass_brain" title="Link to this definition">#</a></dt>
+<dd><p>Plot one or two brain labels on an fsaverage glass brain.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>bl1</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a>) – Name of the first brain label (must exist in the ‘aparc’ parcellation).</p></li>
+<li><p><strong>bl2</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.13)"><em>str</em></a><em> | </em><em>None</em><em>, </em><em>optional</em>) – Name of the second brain label. If None (default), only <code class="docutils literal notranslate"><span class="pre">bl1</span></code> is
+displayed.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>fig_brain</strong> – Figure containing the glass brain plots with highlighted labels.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>matplotlib.figure.Figure</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>This function uses the <code class="docutils literal notranslate"><span class="pre">fsaverage</span></code> subject and the <code class="docutils literal notranslate"><span class="pre">aparc</span></code> parcellation
+from FreeSurfer. The labels are displayed on a cortical surface rendering
+using four different views (frontal, dorsal, frontal, lateral).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.remove_blinks_lms">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">remove_blinks_lms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ref_ch_idx</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">n_taps</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">5</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mu</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0.01</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.remove_blinks_lms" title="Link to this definition">#</a></dt>
+<dd><p>Remove blink artifacts from EEG using adaptive regression (LMS).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> (<em>np.ndarray</em>) – Shape (n_channels, n_times), EEG data.</p></li>
+<li><p><strong>ref_ch</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Index of reference channel (Fp1/Fp2/EOG).</p></li>
+<li><p><strong>n_taps</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of filter taps (adaptive filter length).</p></li>
+<li><p><strong>mu</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#float" title="(in Python v3.13)"><em>float</em></a>) – Learning rate (adaptation speed).</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>cleaned</strong> – Shape (n_channels, n_times), cleaned EEG.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>np.ndarray</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.setup_plotter">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">setup_plotter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mesh</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">clim</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">[0,</span> <span class="pre">0.6]</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">camera_position</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'yz'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">azimuth</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">45</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.setup_plotter" title="Link to this definition">#</a></dt>
+<dd><p>Initialize PyVista plotter, add mesh, and set camera.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.setup_surface">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">setup_surface</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">subjects_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hemi_distance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">100.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.setup_surface" title="Link to this definition">#</a></dt>
+<dd><p>Fetch fsaverage surfaces and prepare PyVista mesh for both hemispheres.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.timed">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">timed</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">func</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.timed" title="Link to this definition">#</a></dt>
+<dd><p>Decorator to measure execution time of a function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>func</strong> (<em>callable</em>) – Function to be timed.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><strong>wrapper</strong> – Wrapped function that returns both the function’s output
+and its execution time in seconds.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p>callable</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<p>The decorated function returns a tuple <code class="docutils literal notranslate"><span class="pre">(value,</span> <span class="pre">elapsed_time)</span></code>,
+where <code class="docutils literal notranslate"><span class="pre">value</span></code> is the original return value of the function,
+and <code class="docutils literal notranslate"><span class="pre">elapsed_time</span></code> is the runtime measured with
+<a class="reference external" href="https://docs.python.org/3/library/time.html#time.perf_counter" title="(in Python v3.13)"><code class="xref py py-func docutils literal notranslate"><span class="pre">time.perf_counter()</span></code></a>.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="ant.tools.tools.weight_to_degree_map">
+<span class="sig-prename descclassname"><span class="pre">ant.tools.tools.</span></span><span class="sig-name descname"><span class="pre">weight_to_degree_map</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n_nodes</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#ant.tools.tools.weight_to_degree_map" title="Link to this definition">#</a></dt>
+<dd><p>Construct linear mappings between edge weights and node degrees.</p>
+<p>Given a graph with <cite>n_nodes</cite>, this function builds a sparse matrix
+that maps edge weights to node degrees and its transpose. The
+resulting linear operators are useful in graph optimization problems.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>n_nodes</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#int" title="(in Python v3.13)"><em>int</em></a>) – Number of nodes in the graph.</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>k</strong> (<em>callable</em>) – Function mapping edge weights (1D array of length n_edges) to
+node degrees (1D array of length n_nodes).</p></li>
+<li><p><strong>kt</strong> (<em>callable</em>) – Function mapping node degrees back to edge weights.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+<p class="rubric">Notes</p>
+<ul class="simple">
+<li><p>The number of edges is <code class="docutils literal notranslate"><span class="pre">n_edges</span> <span class="pre">=</span> <span class="pre">n_nodes</span> <span class="pre">*</span> <span class="pre">(n_nodes</span> <span class="pre">-</span> <span class="pre">1)</span> <span class="pre">/</span> <span class="pre">2</span></code>.</p></li>
+<li><p>Internally, constructs a sparse COO matrix of shape</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">(n_nodes,</span> <span class="pre">n_edges)</span></code>.</p>
+</dd></dl>
+
+</section>
+<section id="module-ant.tools">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-ant.tools" title="Link to this heading">#</a></h2>
+</section>
+</section>
+
+
+                </article>
+              
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="left-prev"
+       href="ant.html"
+       title="previous page">
+      <i class="fa-solid fa-angle-left"></i>
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">previous</p>
+        <p class="prev-next-title">ant package</p>
+      </div>
+    </a>
+    <a class="right-next"
+       href="auto_examples/index.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Examples Gallery</p>
+      </div>
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav class="bd-toc-nav page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#submodules">Submodules</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant.tools.orica">ant.tools.orica module</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA"><code class="docutils literal notranslate"><span class="pre">ORICA</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA.find_blink_ic"><code class="docutils literal notranslate"><span class="pre">ORICA.find_blink_ic()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA.fit_transform"><code class="docutils literal notranslate"><span class="pre">ORICA.fit_transform()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA.inverse_transform"><code class="docutils literal notranslate"><span class="pre">ORICA.inverse_transform()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA.partial_fit"><code class="docutils literal notranslate"><span class="pre">ORICA.partial_fit()</span></code></a></li>
+<li class="toc-h4 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.orica.ORICA.transform"><code class="docutils literal notranslate"><span class="pre">ORICA.transform()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant.tools.simulation">ant.tools.simulation module</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.simulation.simulate_eeg_raw"><code class="docutils literal notranslate"><span class="pre">simulate_eeg_raw()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant.tools.tools">ant.tools.tools module</a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.butter_bandpass"><code class="docutils literal notranslate"><span class="pre">butter_bandpass()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.compute_bandpower"><code class="docutils literal notranslate"><span class="pre">compute_bandpower()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.compute_fft"><code class="docutils literal notranslate"><span class="pre">compute_fft()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.create_blink_template"><code class="docutils literal notranslate"><span class="pre">create_blink_template()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.estimate_aperiodic_component"><code class="docutils literal notranslate"><span class="pre">estimate_aperiodic_component()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.get_canonical_freqs"><code class="docutils literal notranslate"><span class="pre">get_canonical_freqs()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.get_params"><code class="docutils literal notranslate"><span class="pre">get_params()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.log_degree_barrier"><code class="docutils literal notranslate"><span class="pre">log_degree_barrier()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.plot_glass_brain"><code class="docutils literal notranslate"><span class="pre">plot_glass_brain()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.remove_blinks_lms"><code class="docutils literal notranslate"><span class="pre">remove_blinks_lms()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.setup_plotter"><code class="docutils literal notranslate"><span class="pre">setup_plotter()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.setup_surface"><code class="docutils literal notranslate"><span class="pre">setup_surface()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.timed"><code class="docutils literal notranslate"><span class="pre">timed()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#ant.tools.tools.weight_to_degree_map"><code class="docutils literal notranslate"><span class="pre">weight_to_degree_map()</span></code></a></li>
+</ul>
+</li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#module-ant.tools">Module contents</a></li>
+</ul>
+  </nav></div>
+
+  <div class="sidebar-secondary-item">
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/ant.tools.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+          </footer>
+        
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+<div class="bd-footer__inner bd-page-width">
+  
+    <div class="footer-items__start">
+      
+        <div class="footer-item">
+
+  <p class="copyright">
+    
+      © Copyright 2025, Payam S. Shabestari.
+      <br/>
+    
+  </p>
+</div>
+      
+        <div class="footer-item">
+
+  <p class="sphinx-version">
+    Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.1.3.
+    <br/>
+  </p>
+</div>
+      
+    </div>
+  
+  
+  
+    <div class="footer-items__end">
+      
+        <div class="footer-item">
+<p class="theme-version">
+  <!-- # L10n: Setting the PST URL as an argument as this does not need to be localized -->
+  Built with the <a href="https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html">PyData Sphinx Theme</a> 0.16.1.
+</p></div>
+      
+    </div>
+  
+</div>
+
+  </footer>
+  </body>
+</html>
