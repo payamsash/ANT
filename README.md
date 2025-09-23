@@ -1,9 +1,11 @@
 <!-- Top section: Logo + Intro -->
-<table>
-<tr>
-<td width="70%">
+
   
 # ANT  
+
+<table style="border: none; border-collapse: collapse;">
+<tr style="border: none;">
+<td width="70%">
 
 **ANT** is an open-source Python package for **real-time processing and visualization of M/EEG neurofeedback experiments**,  developed in the context of the *Advancing Neurofeedback in Tinnitus* (ANT) project (see [Documentation](https://payamsash.github.io/ANT/)). 
 
@@ -15,7 +17,7 @@
 <td align="right">
   <img src="docs/source/_static/ANT_Logo_Horizontal.svg" alt="ANT logo" width="250">
 </td>
-</tr>
+</tr style="border: none;">
 </table>
 
 ## 🚀 Install
