@@ -89,7 +89,7 @@ class NFRealtime:
         artifact_correction : {False, "orica", "lms"}, default False
                 Artifact-correction method.
         ref_channel : str, default "Fp1"
-                Reference EEG channel.
+                Reference EEG channel in case the artifact_correction method is "lms".
         save_raw : bool, default True
                 Whether to save raw EEG data.
         save_nf_signal : bool, default True
@@ -115,7 +115,7 @@ class NFRealtime:
                 session: str,
                 subjects_dir: str,
                 montage: str,
-                mri: bool,
+                mri: bool = False,
                 subject_fs_id: str = "fsaverage",
                 subjects_fs_dir: Optional[str] = None,
                 filtering: bool = False,
@@ -210,7 +210,7 @@ class NFRealtime:
                 bufsize_baseline: int = 4,
                 bufsize_main: int = 3,
                 acquisition_delay: float = 0.001,
-                timeout: float = 2.0,
+                timeout: float = 5.0,
         ) -> None:
                 """
                 Connect to a Lab Streaming Layer (LSL) EEG stream.
@@ -254,7 +254,7 @@ class NFRealtime:
 
                 # --- Determine file for mock streaming ---
                 if mock_lsl and fname is None:
-                        fname = PROJECT_ROOT / "data" / "sample" / "sample_data.vhdr"
+                        fname = PROJECT_ROOT.parent / "data" / "sample" / "sample_data.vhdr"
 
                 # --- Buffer size based on session ---
                 self.bufsize = bufsize_baseline if self.session == "baseline" else bufsize_main
@@ -522,7 +522,7 @@ class NFRealtime:
                                         btn.clicked.connect(lambda checked, idx=i, h=handler: h(idx))
 
                 if show_brain_activation:
-                        self.initiate_brain_plot()
+                        self.initiate_brain_plot(clim=[0, 0.6], camera_position="yz", azimuth=45)
                 if show_raw_signal:
                         self.plot_rt()
                 if self.show_design_viz:
@@ -583,7 +583,7 @@ class NFRealtime:
 
                                 if show_brain_activation:
                                         plot_tic = time.time()
-                                        self.plot_brain_activation(data)
+                                        self.plot_brain(data, mode="activation")
                                         if estimate_delays:
                                                 plot_delays.append(time.time() - plot_tic)
                                         time.sleep(0.05)
@@ -935,7 +935,6 @@ class NFRealtime:
                         method=method,
                 )
 
-
         def compute_inv_operator(self):
                 """
                 Compute and save the inverse operator for source localization.
@@ -970,9 +969,6 @@ class NFRealtime:
                         cov=self.noise_cov,
                         overwrite=True,
                 )
-
-
-
 
         def run_orica(
                 self,
@@ -1029,7 +1025,7 @@ class NFRealtime:
         
         ## --------------------------- 3D brain activation --------------------------- ##
 
-        def initiate_brain_plot(self):
+        def initiate_brain_plot(self, clim=[0, 0.6], camera_position="yz", azimuth=45):
                 """
                 Initialize the 3D brain plot for real-time visualization.
 
@@ -1060,61 +1056,62 @@ class NFRealtime:
                 subjects_dir = "/Applications/freesurfer/dev/subjects" # fix this later
                 self.hemi_offsets, self.scalars_full, self.mesh, self.verts_stc = \
                                                 setup_surface(subjects_dir, hemi_distance=100.0)
-                self.plotter = setup_plotter(self.mesh)
+                self.plotter = setup_plotter(self.mesh, clim=clim, camera_position=camera_position, azimuth=azimuth)
 
-        def plot_brain_activation(self, data, interval=0.05): 
+        def plot_brain(
+                self,
+                data,
+                interval: float = 0.05,
+                mode: str = "activation",
+                freq_range: tuple = (8., 13.)  # default: alpha band
+                ):
                 """
-                Update the brain plot with real-time source activation.
-
-                This method projects M/EEG data onto the cortical surface using an
-                inverse operator, computes mean activation in time blocks for each 
-                hemisphere, and updates the 3D brain visualization.
+                Plot dynamic brain activation or power.
 
                 Parameters
                 ----------
                 data : ndarray, shape (n_channels, n_times)
-                        The raw EEG/MEG data to project and visualize.
-                interval : float, default=0.05
-                        Pause in seconds between rendering each block, controlling
-                        the update speed of the visualization.
-
-                Notes
-                -----
-                - Uses `RawArray` from MNE to wrap the data and set an average EEG
-                reference if applicable.
-                - Applies the inverse operator via `apply_inverse_raw` with
-                `pick_ori='normal'`.
-                - Data is divided into blocks for smoother visualization; each
-                block is averaged and assigned to the mesh scalars.
-                - PyVista mesh is updated in place and rendered in real-time.
-
-                Raises
-                ------
-                RuntimeError
-                        If `initiate_brain_plot` has not been called before this method.
-
+                        EEG/MEG data in volts.
+                interval : float
+                        Pause (s) between updates in the animation.
+                mode : {'activation', 'power'}
+                        'activation'  -> show source activation (original behaviour).
+                        'power'       -> show band-limited source power.
+                freq_range : tuple of (float, float)
+                        Frequency range (fmin, fmax) in Hz to compute power.
+                        Used only if mode='power'.
                 """
                 raw_data = RawArray(data, self.rec_info)
                 raw_data.set_eeg_reference("average", projection=True)
-                stc = apply_inverse_raw(raw_data, self.inv, lambda2=1 / 9, pick_ori="normal")
 
+                if mode == "power":
+                        fmin, fmax = freq_range
+                        raw_data.filter(l_freq=fmin, h_freq=fmax, fir_design="firwin", verbose=False)
+
+                stc = apply_inverse_raw(raw_data, self.inv, lambda2=1.0 / 9, pick_ori="normal")
                 n_times = data.shape[1]
-                block = int(data.shape[1] / 2)
+                block = int(n_times / 2)  # controls how much to average
                 n_blocks = n_times // block
 
                 for b in range(n_blocks):
                         for hemi in ["lh", "rh"]:
                                 verts = self.verts_stc[hemi] + self.hemi_offsets[hemi]
-                                if hemi == "rh": block_mean = stc.rh_data[:, b*block:(b+1)*block].mean(axis=1)
-                                if hemi == "lh": block_mean = stc.lh_data[:, b*block:(b+1)*block].mean(axis=1)
+
+                                if hemi == "rh":
+                                        block_data = stc.rh_data[:, b * block:(b + 1) * block]
+                                else:  
+                                        block_data = stc.lh_data[:, b * block:(b + 1) * block]
+                                if mode == "power":
+                                        block_mean = np.mean(block_data ** 2, axis=1)
+                                else:
+                                        block_mean = block_data.mean(axis=1)
+
                                 self.scalars_full[verts] = block_mean
 
                         self.mesh["activity"] = self.scalars_full
                         self.mesh.Modified()
                         self.plotter.update_scalars(self.mesh["activity"], render=True)
                         time.sleep(interval)
-
-                #self.plotter.show(auto_close=False)
 
         ## --------------------------- Data I/O & Session Management --------------------------- ##
 
@@ -1984,7 +1981,6 @@ class NFRealtime:
                 stc_data *= fft_window
                 fft_val = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
                 power = np.mean(np.square(fft_val[:, freq_band_idxs]))
-                print(power)
 
                 return float(power)
 
