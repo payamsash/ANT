@@ -744,7 +744,7 @@ def setup_surface(subjects_dir, hemi_distance=100.0):
 
         return hemi_offsets, scalars_full, mesh, verts_stc
 
-def setup_plotter(mesh):
+def setup_plotter(mesh, clim=[0, 0.6], camera_position="yz", azimuth=45):
         """Initialize PyVista plotter, add mesh, and set camera."""
         plotter = pv.Plotter(window_size=(1800, 1200), lighting="three lights")
         plotter.set_background("black")
@@ -759,7 +759,6 @@ def setup_plotter(mesh):
         )
 
         # Add activity overlay as semi-transparent layer
-        clim = [0, 0.6]
         actor = plotter.add_mesh(
                 mesh,
                 scalars="activity",
@@ -784,8 +783,8 @@ def setup_plotter(mesh):
         plotter.enable_eye_dome_lighting()
 
         # Set camera
-        plotter.camera_position = "yz"
-        plotter.camera.azimuth = 45
+        plotter.camera_position = camera_position
+        plotter.camera.azimuth = azimuth
         plotter.show(interactive_update=True, auto_close=False)
 
         return plotter
