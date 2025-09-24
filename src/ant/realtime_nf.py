@@ -583,7 +583,7 @@ class NFRealtime:
 
                                 if show_brain_activation:
                                         plot_tic = time.time()
-                                        self.plot_brain(data, mode="activation")
+                                        self.plot_brain(data, mode="power")
                                         if estimate_delays:
                                                 plot_delays.append(time.time() - plot_tic)
                                         time.sleep(0.05)
