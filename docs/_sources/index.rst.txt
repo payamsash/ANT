@@ -18,7 +18,7 @@ Welcome to the **ANT** documentation! **ANT** is a open-source package which pro
   - *ORICA* (Online Recursive ICA) for source separation.
   - *Adaptive regression (LMS)* for removing blink artifacts from EEG.
   - *Real-time SSP* (Signal Space Projection) for MEG artifact correction.
-  - *HFC correction* for MEG high-frequency artifacts.
+  - *HFC correction* (Homogenious Field Correction) for OPM-MEG artifacts.
 - *Lightweight management of experimental projects*, enabling organized and efficient experimentation.
 - Flexible and extensible tools for *real-time neuroimaging, visualization, and neurofeedback applications*.
 
