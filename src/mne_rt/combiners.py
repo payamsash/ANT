@@ -69,11 +69,16 @@ class FeatureCombiner:
 
     Notes
     -----
-    The combiner receives a snapshot dict ``{modality_name: float}`` once per
-    analysis window, immediately after the EMA smoothing step inside
-    :meth:`~mne_rt.RTStream.record_main`.  The returned scalar replaces the
-    per-modality values for protocol evaluation and display when a combiner is
-    active.
+    Pass an instance to :meth:`~mne_rt.RTStream.record_main` as ``combiner=``.
+    It then receives a snapshot dict ``{modality_name: float}`` once per analysis
+    window, after z-scoring and EMA smoothing.  The returned scalar is appended
+    as an additional trace (``combined_name``, ``"combined"`` by default) — the
+    per-modality values are kept, not replaced — and that trace is plotted,
+    saved, broadcast over OSC/LSL, and can drive its own protocol.
+
+    Only :class:`ZScoredNormCombiner` normalises internally.  For the others,
+    use ``record_main(zscore_normalize=True)`` when mixing features whose units
+    differ in scale, or one will dominate the result.
     """
 
     def __init__(self, features: Optional[list[str]] = None) -> None:

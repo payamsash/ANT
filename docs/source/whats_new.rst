@@ -13,6 +13,24 @@ Version 1.1.0
 New features
 ^^^^^^^^^^^^
 
+- **Feature combiners are now wired into the live loop.** The four
+  :class:`~mne_rt.FeatureCombiner` subclasses existed and were unit-tested, but
+  nothing ever called them: :meth:`~mne_rt.RTStream.record_main` had no way to
+  use one, despite the base class documenting otherwise. It now accepts
+  ``combiner=`` (and ``combined_name=``), reducing the per-modality values to a
+  single scalar once per window, after z-scoring and smoothing. The result is an
+  additional trace — the per-modality ones are kept — and is treated as a
+  modality throughout: plotted, saved, broadcast over OSC/LSL, and able to drive
+  its own protocol. Mixing features in native units without
+  ``zscore_normalize=True`` warns, since the largest-scale feature would
+  otherwise dominate — except for :class:`~mne_rt.ZScoredNormCombiner`, which
+  normalises internally. :class:`~mne_rt.GeometricMeanCombiner` warns about the
+  opposite combination: it takes a logarithm, so the negative half of a z-score
+  distribution is floored and collapses the result.
+  The combined trace is held at ``0.0`` until every feature's z-score has warmed
+  up, so it never mixes native units and then jumps by orders of magnitude when
+  normalisation engages.
+
 - **Volume source spaces and subcortical ROIs.**
   :class:`~mne_rt.RTStream` accepts ``source_space="volume"``, building a
   volumetric grid instead of a cortical surface. This makes subcortical
