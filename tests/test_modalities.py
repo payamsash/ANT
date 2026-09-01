@@ -75,6 +75,7 @@ def nf_obj(tmp_path):
             self.config_file = str(config_file)
             self._modality_params = {}
             self.rec_info = info
+            self.winsize = N_TIMES / SFREQ  # 1 s, matching DATA
 
         @property
         def modality_params(self):
@@ -386,3 +387,190 @@ class TestConnectivityRatioModality:
         }
         with pytest.raises(ValueError):
             obj._connectivity_ratio_prep()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Connectivity: imcoh and n_cycles
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _connectivity_channels(nf_obj):
+    """First two real channel names, as the config's [ [a,b], [c,d] ] pair form."""
+    names = nf_obj.rec_info["ch_names"]
+    return [[names[0], names[1]], [names[2], names[3]]]
+
+
+def test_sensor_connectivity_coh(nf_obj):
+    from mne_rt.tools import get_params
+
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = _connectivity_channels(nf_obj)
+    prep = nf_obj._sensor_connectivity_prep()
+    val, delay = nf_obj._sensor_connectivity(DATA, **prep)
+    assert isinstance(val, float)
+    assert np.isfinite(val)
+    assert delay >= 0
+
+
+def test_sensor_connectivity_imcoh_runs(nf_obj):
+    """imcoh used to raise KeyError from spectral_connectivity_time."""
+    from mne_rt.tools import get_params
+
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = _connectivity_channels(nf_obj)
+    nf_obj.params["method"] = "imcoh"
+    prep = nf_obj._sensor_connectivity_prep()
+    assert prep["method"] == "cohy"  # remapped
+    assert prep["take_imag"] is True
+    val, _ = nf_obj._sensor_connectivity(DATA, **prep)
+    assert isinstance(val, float)
+    assert np.isfinite(val)
+
+
+def test_sensor_connectivity_imcoh_is_real_valued(nf_obj):
+    """The imaginary part must be extracted, not left complex."""
+    from mne_rt.tools import get_params
+
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = _connectivity_channels(nf_obj)
+    nf_obj.params["method"] = "imcoh"
+    prep = nf_obj._sensor_connectivity_prep()
+    val, _ = nf_obj._sensor_connectivity(DATA, **prep)
+    assert not isinstance(val, complex)
+    assert abs(val) <= 1.0 + 1e-9
+
+
+def test_sensor_connectivity_imcoh_detects_phase_lag(nf_obj):
+    """Guards against silently returning 0.
+
+    ``get_data(output="dense")`` allocates a real array and discards the
+    imaginary part, so a naive implementation yields exactly 0.0 for every
+    window.  Two channels with a genuine non-zero phase lag must produce a
+    non-zero imaginary coherence.
+    """
+    from mne_rt.tools import get_params
+
+    n = N_TIMES
+    t = np.arange(n) / SFREQ
+    rng = np.random.default_rng(11)
+    lagged = np.zeros((N_CHANNELS, n))
+    lagged[0] = np.sin(2 * np.pi * 10 * t) + 0.3 * rng.standard_normal(n)
+    lagged[1] = np.sin(2 * np.pi * 10 * t + 1.2) + 0.3 * rng.standard_normal(n)
+    lagged[2:] = 0.3 * rng.standard_normal((N_CHANNELS - 2, n))
+
+    names = nf_obj.rec_info["ch_names"]
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = [[names[0], names[1]]]
+    nf_obj.params["method"] = "imcoh"
+    prep = nf_obj._sensor_connectivity_prep()
+    val, _ = nf_obj._sensor_connectivity(lagged, **prep)
+    assert abs(val) > 0.05, f"imcoh collapsed to {val!r} — imaginary part lost?"
+
+
+def test_sensor_connectivity_imcoh_near_zero_for_zero_lag(nf_obj):
+    """The complement: zero-lag (volume-conduction-like) coupling gives ~0."""
+    from mne_rt.tools import get_params
+
+    n = N_TIMES
+    t = np.arange(n) / SFREQ
+    rng = np.random.default_rng(12)
+    common = np.sin(2 * np.pi * 10 * t)
+    synced = np.zeros((N_CHANNELS, n))
+    synced[0] = common + 0.05 * rng.standard_normal(n)
+    synced[1] = common + 0.05 * rng.standard_normal(n)
+    synced[2:] = 0.3 * rng.standard_normal((N_CHANNELS - 2, n))
+
+    names = nf_obj.rec_info["ch_names"]
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = [[names[0], names[1]]]
+    nf_obj.params["method"] = "imcoh"
+    prep = nf_obj._sensor_connectivity_prep()
+    val, _ = nf_obj._sensor_connectivity(synced, **prep)
+    assert abs(val) < 0.2
+
+
+def test_sensor_connectivity_theta_rejected_at_default_n_cycles(nf_obj):
+    """5 cycles at 4 Hz needs 1.25 s; the 1 s window must be refused up front."""
+    from mne_rt.tools import get_params
+
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = _connectivity_channels(nf_obj)
+    nf_obj.params["frange"] = [4, 8]
+    with pytest.raises(ValueError, match="winsize"):
+        nf_obj._sensor_connectivity_prep()
+
+
+def test_sensor_connectivity_theta_works_with_auto_n_cycles(nf_obj):
+    from mne_rt.tools import get_params
+
+    nf_obj.params = get_params(nf_obj.config_file, "sensor_connectivity", {})
+    nf_obj.params["channels"] = _connectivity_channels(nf_obj)
+    nf_obj.params["frange"] = [4, 8]
+    nf_obj.params["n_cycles"] = "auto"
+    prep = nf_obj._sensor_connectivity_prep()
+    val, _ = nf_obj._sensor_connectivity(DATA, **prep)
+    assert np.isfinite(val)
+
+
+def test_connectivity_ratio_imcoh_runs():
+    """connectivity_ratio shares the same imcoh remapping."""
+    from mne_rt.tools import get_params
+
+    data = _make_alpha_eeg()
+    obj = _make_dummy_modality_mixin(data=data, ch_names=["C3", "C4", "F3", "F4"])
+    config_file = str(
+        __import__("pathlib").Path(__file__).parent.parent / "src" / "mne_rt" / "config_methods.yml"
+    )
+    obj.params = get_params(config_file, "connectivity_ratio", {})
+    obj.params["method"] = "imcoh"
+    prep = obj._connectivity_ratio_prep()
+    assert prep["method"] == "cohy"
+    assert prep["take_imag"] is True
+    val, _ = obj._connectivity_ratio(data, **prep)
+    assert isinstance(val, float)
+    assert np.isfinite(val)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Source modalities: inverse-operator lookup
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_get_inverse_operator_prefers_in_memory(nf_obj):
+    sentinel = object()
+    nf_obj.inv = sentinel
+    assert nf_obj._get_inverse_operator() is sentinel
+
+
+def test_get_inverse_operator_missing_raises_actionable_error(nf_obj, tmp_path):
+    """Previously this raised AttributeError on the never-assigned `self.visit`."""
+    nf_obj.inv = None
+    nf_obj.subject_id = "01"
+    nf_obj.session = "01"
+    nf_obj.subject_dir = tmp_path
+    (tmp_path / "inv").mkdir()
+    with pytest.raises(RuntimeError, match="record_baseline"):
+        nf_obj._get_inverse_operator()
+
+
+def test_get_inverse_operator_reads_bids_stem(nf_obj, tmp_path, monkeypatch):
+    """The read path must match the stem compute_inv_operator() writes."""
+    import mne_rt.modalities as modalities
+
+    nf_obj.inv = None
+    nf_obj.subject_id = "P01"
+    nf_obj.session = "02"
+    nf_obj.subject_dir = tmp_path
+    (tmp_path / "inv").mkdir()
+    expected = tmp_path / "inv" / "sub-P01_ses-02_task-baseline_inv.fif"
+    expected.touch()
+
+    seen = {}
+
+    def _fake_read(fname):
+        seen["fname"] = fname
+        return "inverse-operator"
+
+    monkeypatch.setattr(modalities, "read_inverse_operator", _fake_read)
+    assert nf_obj._get_inverse_operator() == "inverse-operator"
+    assert str(seen["fname"]) == str(expected)

@@ -139,9 +139,16 @@ def get_params(config_file, modality, modality_params):
             Name of the neurofeedback modality. Must be present in the
             ``NF_modality`` section of the config file.
     modality_params : dict | None
-            Optional dictionary with parameter overrides. The keys should be method
-            names (e.g., "fft", "welch"), and the values should be dictionaries
-            with parameter key-value pairs to update.
+            Optional parameter overrides, in either of two forms:
+
+            * **nested** — ``{modality_name: {param: value}}``, the form
+              :meth:`~mne_rt.RTStream.record_main` passes when several
+              modalities run together.  Only the entry matching ``modality``
+              is applied; entries for other modalities are ignored.
+            * **flat** — ``{param: value}``, applied directly to ``modality``.
+
+            The two are told apart by checking whether any top-level key names
+            a modality defined in the config file.
 
     Returns
     -------
@@ -153,8 +160,7 @@ def get_params(config_file, modality, modality_params):
     ValueError
             If the modality is not found in the config file.
     ValueError
-            If a provided method in ``modality_params`` is not available
-            for the given modality.
+            If an override names a parameter this modality does not have.
 
     Notes
     -----
@@ -172,14 +178,109 @@ def get_params(config_file, modality, modality_params):
 
     # get params for this modality
     params = deepcopy(config["NF_modality"][modality])
-    if modality_params is not None:
-        for method, overrides in modality_params.items():
-            if method not in params:
-                raise ValueError(
-                    f"Unknown method {method!r} for modality {modality!r}. Available: {list(params.keys())}"
-                )
-            params[method].update(overrides)
+    if modality_params:
+        # Nested {modality: {...}} or flat {param: ...}?  A key naming any known
+        # modality means the caller used the nested form.
+        if set(modality_params) & set(config["NF_modality"]):
+            overrides = modality_params.get(modality) or {}
+        else:
+            overrides = modality_params
+
+        unknown = set(overrides) - set(params)
+        if unknown:
+            raise ValueError(
+                f"Unknown parameter(s) {sorted(unknown)} for modality {modality!r}. "
+                f"Available: {sorted(params)}"
+            )
+        for key, value in overrides.items():
+            # Only dict-valued parameters merge; scalars and lists are replaced.
+            if isinstance(params[key], dict) and isinstance(value, dict):
+                params[key].update(value)
+            else:
+                params[key] = value
     return params
+
+
+# ``spectral_connectivity_time`` implements a smaller set of metrics than
+# ``spectral_connectivity_epochs``.  Map the ones we advertise onto what it
+# actually supports; the bool says whether to take the imaginary part after.
+_TIME_CON_ALIASES = {"imcoh": ("cohy", True)}
+
+
+def resolve_connectivity_method(method):
+    """Map an NF connectivity metric onto a ``spectral_connectivity_time`` method.
+
+    :func:`mne_connectivity.spectral_connectivity_time` has no ``"imcoh"`` in its
+    bivariate dispatch table and raises ``KeyError`` if asked for one.  Since the
+    imaginary part of coherency *is* the imaginary coherence by definition, we
+    request ``"cohy"`` and take the imaginary part ourselves — an exact identity,
+    not an approximation.
+
+    Parameters
+    ----------
+    method : str
+            Connectivity metric as named in the config file.
+
+    Returns
+    -------
+    method : str
+            Metric to pass to :func:`~mne_connectivity.spectral_connectivity_time`.
+    take_imag : bool
+            Whether the returned (complex) values must be reduced to their
+            imaginary part.
+    """
+    return _TIME_CON_ALIASES.get(method, (method, False))
+
+
+def resolve_n_cycles(freqs, n_cycles, winsize):
+    """Resolve the Morlet ``n_cycles`` for an analysis window of ``winsize`` seconds.
+
+    A Morlet wavelet of ``n`` cycles at ``f`` Hz spans ``n / f`` seconds and must
+    fit inside the analysis window.  With the fixed ``n_cycles=5`` used previously,
+    a theta band (4 Hz) needs 1.25 s and therefore cannot be estimated at the
+    default 1 s window at all.
+
+    Parameters
+    ----------
+    freqs : array-like
+            Frequencies the wavelets are centred on, in Hz.
+    n_cycles : float | array-like | "auto"
+            Number of cycles per wavelet.  ``"auto"`` scales with the window as
+            ``max(2, freqs * winsize / 3)``, which keeps roughly three wavelets
+            inside the window while never dropping below two cycles.
+    winsize : float
+            Analysis window length in seconds.
+
+    Returns
+    -------
+    n_cycles : ndarray
+            One value per entry in ``freqs``.
+
+    Raises
+    ------
+    ValueError
+            If any wavelet would be longer than the analysis window.
+    """
+    freqs = np.asarray(freqs, dtype=float)
+    if isinstance(n_cycles, str):
+        if n_cycles != "auto":
+            raise ValueError(f"n_cycles must be a number, an array, or 'auto'; got {n_cycles!r}.")
+        n_cycles = np.maximum(2.0, freqs * float(winsize) / 3.0)
+    n_cycles = np.broadcast_to(np.asarray(n_cycles, dtype=float), freqs.shape).copy()
+
+    # mne-connectivity rejects freqs < n_cycles / winsize; raise our own message
+    # first so the user is told which knob to turn.
+    lengths = n_cycles / freqs
+    too_long = lengths > float(winsize)
+    if np.any(too_long):
+        i = int(np.argmax(too_long))
+        raise ValueError(
+            f"n_cycles={n_cycles[i]:g} at {freqs[i]:g} Hz needs {lengths[i]:.3g} s of data "
+            f"but winsize is {winsize:g} s. Increase winsize (>= {lengths[i]:.3g} s), raise "
+            "the lower edge of 'frange', or lower n_cycles. Note n_cycles='auto' scales "
+            "with winsize."
+        )
+    return n_cycles
 
 
 def compute_bandpower(

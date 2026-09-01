@@ -15,6 +15,8 @@ from mne_rt.tools.tools import (
     get_params,
     log_degree_barrier,
     remove_blinks_lms,
+    resolve_connectivity_method,
+    resolve_n_cycles,
     timed,
     weight_to_degree_map,
 )
@@ -218,8 +220,39 @@ def test_get_params_unknown_modality_raises(config_file):
 
 
 def test_get_params_unknown_override_key_raises(config_file):
-    with pytest.raises(ValueError, match="Unknown method"):
+    with pytest.raises(ValueError, match="Unknown parameter"):
         get_params(config_file, "sensor_power", {"not_a_param": {}})
+
+
+def test_get_params_flat_override(config_file):
+    """{param: value} applies directly to the requested modality."""
+    params = get_params(config_file, "sensor_power", {"frange": [10, 12]})
+    assert params["frange"] == [10, 12]
+    assert params["method"] == "welch"  # untouched default
+
+
+def test_get_params_nested_override(config_file):
+    """{modality: {param: value}} — the form record_main passes."""
+    params = get_params(config_file, "sensor_power", {"sensor_power": {"frange": [10, 12]}})
+    assert params["frange"] == [10, 12]
+
+
+def test_get_params_nested_override_ignores_other_modalities(config_file):
+    """A nested dict naming other modalities must not leak into this one."""
+    overrides = {"erd_ers": {"frange": [1, 2]}, "sensor_power": {"frange": [10, 12]}}
+    assert get_params(config_file, "sensor_power", overrides)["frange"] == [10, 12]
+    assert get_params(config_file, "hjorth", overrides)["frange"] == [8, 13]
+
+
+def test_get_params_nested_override_absent_modality_is_noop(config_file):
+    params = get_params(config_file, "sensor_power", {"erd_ers": {"frange": [1, 2]}})
+    assert params["frange"] == [8, 13]
+
+
+def test_get_params_scalar_override_replaces_not_merges(config_file):
+    """Lists/scalars are replaced; previously this called .update() on a list."""
+    params = get_params(config_file, "sensor_power", {"method": "multitaper"})
+    assert params["method"] == "multitaper"
 
 
 def test_get_params_does_not_mutate_config_between_calls(config_file):
@@ -395,3 +428,176 @@ def test_log_degree_barrier_two_node_nonnegative():
     signals = np.array([[0.0, 1.0, 2.0], [1.0, 1.0, 1.0]])
     mat = log_degree_barrier(signals, dist_type="euclidean", alpha=1.0, beta=0.1)
     assert np.all(mat >= 0.0)
+
+
+# ------------------------------------------------------------------
+# resolve_connectivity_method
+# ------------------------------------------------------------------
+
+
+def test_resolve_connectivity_method_maps_imcoh_to_cohy():
+    assert resolve_connectivity_method("imcoh") == ("cohy", True)
+
+
+@pytest.mark.parametrize("method", ["coh", "cohy", "plv", "wpli", "pli", "ciplv"])
+def test_resolve_connectivity_method_passthrough(method):
+    assert resolve_connectivity_method(method) == (method, False)
+
+
+def _lagged_pair(seed=3, sfreq=500.0, n_times=2000, phase=0.9):
+    """Two channels sharing a 10 Hz component with a genuine (non-zero) lag."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n_times) / sfreq
+    return np.stack(
+        [
+            np.sin(2 * np.pi * 10 * t) + 0.5 * rng.standard_normal(n_times),
+            np.sin(2 * np.pi * 10 * t + phase) + 0.5 * rng.standard_normal(n_times),
+        ]
+    )[np.newaxis]
+
+
+def test_cohy_imag_agrees_with_native_imcoh_when_available():
+    """Cross-check the remap against native ``imcoh`` where the version has it.
+
+    ``spectral_connectivity_time`` gained ``imcoh`` in mne-connectivity 0.9;
+    before that it raised ``KeyError``. We request ``cohy`` and take the
+    imaginary part on every version, so results do not silently change with the
+    resolved dependency. This test asserts the two agree where both exist, and
+    otherwise documents the gap the remap works around.
+    """
+    mne_connectivity = pytest.importorskip("mne_connectivity")
+    data = _lagged_pair()
+    indices = (np.array([0]), np.array([1]))
+    kwargs = dict(
+        freqs=np.linspace(8, 13, 6),
+        indices=indices,
+        sfreq=500.0,
+        fmin=8,
+        fmax=13,
+        faverage=True,
+        mode="cwt_morlet",
+        n_cycles=5,
+        average=False,
+        verbose=False,
+    )
+
+    remapped = float(
+        np.imag(
+            np.asarray(
+                mne_connectivity.spectral_connectivity_time(
+                    data, method="cohy", **kwargs
+                ).get_data()
+            ).ravel()[0]
+        )
+    )
+
+    try:
+        native = np.asarray(
+            mne_connectivity.spectral_connectivity_time(data, method="imcoh", **kwargs).get_data()
+        ).ravel()[0]
+    except KeyError:
+        # mne-connectivity < 0.9 — exactly the gap resolve_connectivity_method
+        # exists for. The remap must still produce a usable, non-trivial value.
+        assert abs(remapped) > 1e-6
+        return
+
+    np.testing.assert_allclose(remapped, float(np.real(native)), atol=1e-9)
+
+
+def test_cohy_imag_matches_epochs_imcoh():
+    """imag(cohy) is imcoh by definition — check against the epochs implementation.
+
+    ``spectral_connectivity_epochs`` has had ``imcoh`` all along, so this holds
+    on every supported mne-connectivity version.
+    """
+    mne_connectivity = pytest.importorskip("mne_connectivity")
+    sfreq = 500.0
+    data = _lagged_pair(sfreq=sfreq)
+    indices = (np.array([0]), np.array([1]))
+
+    con_time = mne_connectivity.spectral_connectivity_time(
+        data,
+        freqs=np.linspace(8, 13, 6),
+        indices=indices,
+        sfreq=sfreq,
+        fmin=8,
+        fmax=13,
+        faverage=True,
+        mode="cwt_morlet",
+        method="cohy",
+        n_cycles=5,
+        average=False,
+        verbose=False,
+    )
+    got = float(np.imag(np.asarray(con_time.get_data()).ravel()[0]))
+
+    con_epochs = mne_connectivity.spectral_connectivity_epochs(
+        data,
+        method="imcoh",
+        indices=indices,
+        sfreq=sfreq,
+        fmin=8,
+        fmax=13,
+        faverage=True,
+        mode="cwt_morlet",
+        cwt_freqs=np.linspace(8, 13, 6),
+        cwt_n_cycles=5,
+        verbose=False,
+    )
+    expected = float(np.asarray(con_epochs.get_data()).ravel()[0])
+
+    # Different internal normalisations, but they must agree in sign and scale.
+    assert np.sign(got) == np.sign(expected)
+    assert abs(got - expected) < 0.1
+
+
+# ------------------------------------------------------------------
+# resolve_n_cycles
+# ------------------------------------------------------------------
+
+
+def test_resolve_n_cycles_scalar_broadcasts():
+    freqs = np.array([8.0, 10.0, 13.0])
+    np.testing.assert_allclose(resolve_n_cycles(freqs, 5, winsize=2.0), [5.0, 5.0, 5.0])
+
+
+def test_resolve_n_cycles_auto_scales_with_winsize():
+    freqs = np.array([4.0, 8.0, 13.0])
+    short = resolve_n_cycles(freqs, "auto", winsize=1.0)
+    long = resolve_n_cycles(freqs, "auto", winsize=4.0)
+    assert np.all(long >= short)
+    assert np.all(short >= 2.0)  # never drops below two cycles
+
+
+def test_resolve_n_cycles_auto_fits_theta_in_one_second():
+    """The case the fixed n_cycles=5 could not do: 4 Hz in a 1 s window."""
+    freqs = np.linspace(4, 8, 6)
+    n_cycles = resolve_n_cycles(freqs, "auto", winsize=1.0)
+    assert np.all(n_cycles / freqs <= 1.0)
+
+
+def test_resolve_n_cycles_rejects_wavelet_longer_than_window():
+    """5 cycles at 4 Hz needs 1.25 s; a 1 s window must be refused up front."""
+    with pytest.raises(ValueError, match="winsize"):
+        resolve_n_cycles(np.array([4.0, 8.0]), 5, winsize=1.0)
+
+
+def test_resolve_n_cycles_error_names_the_offending_frequency():
+    with pytest.raises(ValueError, match="4 Hz"):
+        resolve_n_cycles(np.array([4.0, 20.0]), 5, winsize=1.0)
+
+
+def test_resolve_n_cycles_rejects_unknown_string():
+    with pytest.raises(ValueError, match="'auto'"):
+        resolve_n_cycles(np.array([10.0]), "sensible", winsize=2.0)
+
+
+def test_resolve_n_cycles_matches_upstream_constraint():
+    """Our pre-check must accept exactly what mne-connectivity accepts."""
+    freqs = np.array([6.0, 10.0])
+    winsize = 1.0
+    # boundary: wavelet exactly as long as the window
+    n_cycles = freqs * winsize
+    np.testing.assert_allclose(resolve_n_cycles(freqs, n_cycles, winsize), n_cycles)
+    with pytest.raises(ValueError):
+        resolve_n_cycles(freqs, n_cycles * 1.01, winsize)

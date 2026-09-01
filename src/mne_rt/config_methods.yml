@@ -118,8 +118,17 @@ NF_modality:
     method: "coh"            # "corr" | "coh" | "imcoh" | "mic" | "mim" | "plv"
                              # "ciplv" | "pli" | "wpli" | "gc" | "gc_tr"
                              # "imcoh" = imaginary part of coherence (robust to
-                             #           zero-lag volume conduction artefacts)
+                             #           zero-lag volume conduction artefacts).
+                             #           Requested internally as "cohy" + imag,
+                             #           since spectral_connectivity_time has no
+                             #           "imcoh" of its own.
     mode: "cwt_morlet"       # "multitaper" | "cwt_morlet"
+    n_cycles: 5              # Morlet cycles per wavelet, or "auto" to scale with
+                             # winsize as max(2, freqs * winsize / 3).
+                             # A wavelet spans n_cycles / freq seconds and must fit
+                             # inside the analysis window: the default 5 cycles needs
+                             # 1.25 s at 4 Hz, so theta requires winsize >= 1.25 or
+                             # n_cycles: "auto".
 
   connectivity_ratio:
     # Ratio of functional connectivity between two channel pairs.
@@ -130,6 +139,7 @@ NF_modality:
     channels_den: ["F3", "F4"]   # denominator pair [ch_A, ch_B]
     method: "coh"           # see sensor_connectivity for options
     mode: "cwt_morlet"      # "multitaper" | "cwt_morlet"
+    n_cycles: 5             # see sensor_connectivity.n_cycles
 
   cfc_sensor:
     # Cross-Frequency Coupling: phase of frange_1 × amplitude of frange_2.
@@ -173,6 +183,7 @@ NF_modality:
     atlas: "aparc"
     method: "coh"            # see sensor_connectivity.method for all options
     mode: "cwt_morlet"       # "multitaper" | "cwt_morlet"
+    n_cycles: 5              # see sensor_connectivity.n_cycles
 
   # ── Source-space graph ─────────────────────────────────────────────────────
 
