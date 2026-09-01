@@ -59,6 +59,16 @@ def qt_app():
     yield app
 
 
+# NOTE: draining the Qt event queue after every test — an autouse fixture doing
+# `qt_app.processEvents()` — makes the intermittent CI abort in this file
+# reproduce *deterministically*, including locally under
+# QT_QPA_PLATFORM=offscreen. It segfaults partway through TestEpochPlot, and
+# neither of those tests crashes in isolation, so the fault is in the ordering
+# of accumulated widget destruction rather than in any single test. That is a
+# useful reproduction for fixing the underlying bug, but it must not be
+# committed as-is: it would turn a ~50 % flake into a guaranteed failure.
+
+
 @pytest.fixture(scope="module")
 def topo_info():
     """mne.Info with standard 10-20 montage for TopomapPlot tests."""

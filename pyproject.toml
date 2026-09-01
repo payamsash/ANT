@@ -223,3 +223,6 @@ warn_return_any = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "slow: needs FreeSurfer anatomy (fetch_fsaverage) or is otherwise slow; deselect with -m 'not slow'",
+]

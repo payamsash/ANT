@@ -13,6 +13,34 @@ Version 1.1.0
 New features
 ^^^^^^^^^^^^
 
+- **Volume source spaces and subcortical ROIs.**
+  :class:`~mne_rt.RTStream` accepts ``source_space="volume"``, building a
+  volumetric grid instead of a cortical surface. This makes subcortical
+  structures — hippocampus, amygdala, thalamus — reachable for the first
+  time; they do not exist on the cortical surface at all. FreeSurfer's
+  ``aparc+aseg`` atlas carries cortical parcels *and* subcortical structures,
+  so one volume source space covers both without needing a mixed model.
+  ``compute_inv_operator(volume_labels=[...])`` restricts the grid to just
+  the labels you need, which takes a whole-brain 5 mm grid from ~14 600
+  source points down to a few hundred.
+- **New** :mod:`mne_rt.source` **module** with :class:`~mne_rt.SourceModel`,
+  :class:`~mne_rt.ROI`, :func:`~mne_rt.resolve_rois` and
+  :func:`~mne_rt.list_rois`. ROIs are named groups of atlas labels, so
+  ``"Broca"`` can expand to pars opercularis ∪ pars triangularis and still
+  behave as one region.
+  :meth:`~mne_rt.SourceModel.roi_kernel` collapses the whole
+  beamformer-plus-label-extraction chain into a single
+  ``(n_roi, n_channels)`` matrix, built once. Applying it is a ~10 µs matmul
+  instead of a ~650 ms round trip through
+  :func:`~mne.extract_label_time_course`, and is numerically identical to the
+  MNE route (~1e-15 relative error, pinned by a test).
+- :meth:`~mne_rt.RTStream.compute_inv_operator` now also estimates and saves a
+  **data covariance** (``*_desc-data_cov.fif``) and the **source space**
+  (``*_src.fif``). The data covariance is what a beamformer adapts to and is a
+  different quantity from the noise covariance; the source space is needed to
+  map atlas labels onto source estimates and cannot be recovered from a
+  beamformer afterwards. ``make_inverse=False`` skips the minimum-norm
+  operator for beamformer-only sessions.
 - :class:`~mne_rt.viz.NFPlot` now draws a live, toggleable dashed
   **threshold line** for the protocol driving each modality — fixed for
   :class:`~mne_rt.protocols.ThresholdProtocol`, adaptive (redrawn every
