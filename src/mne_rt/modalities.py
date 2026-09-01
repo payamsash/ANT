@@ -26,6 +26,7 @@ New modalities added:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 from warnings import warn
 
@@ -52,8 +53,42 @@ from mne_rt.tools import (
     compute_fft,
     estimate_aperiodic_component,
     log_degree_barrier,
+    resolve_connectivity_method,
+    resolve_n_cycles,
     timed,
 )
+
+
+def _connectivity_values(con, take_imag: bool) -> np.ndarray:
+    """Per-pair connectivity values from a ``spectral_connectivity_time`` result.
+
+    Uses the default *raveled* output rather than ``output="dense"``: the dense
+    form allocates a real-valued matrix and silently discards the imaginary part
+    (``ComplexWarning``), which would zero out every ``imcoh`` value.
+
+    Parameters
+    ----------
+    con : instance of SpectralConnectivity
+            Result of :func:`~mne_connectivity.spectral_connectivity_time`,
+            computed with explicit ``indices`` and ``faverage=True``.
+    take_imag : bool
+            Take the imaginary part (imaginary coherence) rather than the value
+            as returned.
+
+    Returns
+    -------
+    values : ndarray, shape (n_pairs,)
+            One real value per requested connection, averaged over epochs and
+            the (already band-averaged) frequency axis.
+    """
+    values = np.asarray(con.get_data())  # (n_epochs, n_pairs, n_freqs)
+    values = values.reshape(values.shape[0], values.shape[1], -1).mean(axis=(0, 2))
+    if take_imag:
+        return np.imag(values)
+    if np.iscomplexobj(values):
+        # e.g. "cohy" requested directly — report the real (co-coherence) part.
+        return np.real(values)
+    return values
 
 
 class ModalityMixin:
@@ -96,6 +131,32 @@ class ModalityMixin:
     custom modality, sub-class :class:`~mne_rt.RTStream` and add a matching
     ``_<name>_prep`` / ``_<name>`` pair following the same pattern.
     """
+
+    # ------------------------------------------------------------------
+    # Shared helpers
+    # ------------------------------------------------------------------
+
+    def _get_inverse_operator(self):
+        """Return the fitted inverse operator, from memory or from disk.
+
+        :meth:`~mne_rt.RTStream.compute_inv_operator` leaves the operator on the
+        instance and also writes it under ``inv/``; prefer the in-memory copy and
+        fall back to the file so a session restarted against an existing subject
+        directory still works.
+        """
+        inv = getattr(self, "inv", None)
+        if inv is not None:
+            return inv
+
+        stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"
+        fname = self.subject_dir / "inv" / f"{stem}_inv.fif"
+        if not Path(fname).is_file():
+            raise RuntimeError(
+                "No inverse operator available for a source-space modality. Run "
+                "record_baseline() (which calls compute_inv_operator()) first. "
+                f"Looked for {fname}."
+            )
+        return read_inverse_operator(fname=fname)
 
     # ------------------------------------------------------------------
     # Prep methods  (run once before the main loop, return kwargs dict)
@@ -173,6 +234,8 @@ class ModalityMixin:
             "fft_window": fft_window,
             "ap_model": ap_model,
             "gaussian": _gaussian,
+            "mask": mask,
+            "freqs_band": freqs_band,
         }
 
     def _source_power_prep(self) -> dict:
@@ -190,9 +253,7 @@ class ModalityMixin:
 
         method = self.params["method"]
         if method in ("MNE", "dSPM", "sLORETA", "eLORETA"):
-            inverse_operator = read_inverse_operator(
-                fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif"
-            )
+            inverse_operator = self._get_inverse_operator()
         elif method == "LCMV":
             inverse_operator = make_lcmv(
                 self.rec_info,
@@ -220,17 +281,32 @@ class ModalityMixin:
     def _sensor_connectivity_prep(self) -> dict:
         ch_names = self.rec_info["ch_names"]
         chs = self.params["channels"]
-        indices = tuple(
-            np.array([ch_names.index(ch1), ch_names.index(ch2)]) for ch1, ch2 in zip(chs[0], chs[1])
-        )
-        freqs = np.linspace(self.params["frange"][0], self.params["frange"][1], 6)
+        # `channels` is a list of [ch_A, ch_B] pairs; build mne-connectivity's
+        # (seeds, targets) form.  The previous zip(chs[0], chs[1]) happened to
+        # give the same answer for exactly two pairs, but raised IndexError for
+        # one pair and silently ignored the third onwards.
+        missing = sorted({c for pair in chs for c in pair} - set(ch_names))
+        if missing:
+            raise ValueError(
+                f"sensor_connectivity: channels {missing} not found in recording. "
+                f"Available: {ch_names}"
+            )
+        seeds = np.array([ch_names.index(pair[0]) for pair in chs])
+        targets = np.array([ch_names.index(pair[1]) for pair in chs])
+        indices = (seeds, targets)
+        fmin, fmax = self.params["frange"]
+        freqs = np.linspace(fmin, fmax, 6)
+        method, take_imag = resolve_connectivity_method(self.params["method"])
+        n_cycles = resolve_n_cycles(freqs, self.params.get("n_cycles", 5), self.winsize)
         return {
             "indices": indices,
             "freqs": freqs,
-            "fmin": self.params["frange"][0],
-            "fmax": self.params["frange"][1],
+            "fmin": fmin,
+            "fmax": fmax,
             "mode": self.params["mode"],
-            "method": self.params["method"],
+            "method": method,
+            "take_imag": take_imag,
+            "n_cycles": n_cycles,
         }
 
     def _source_connectivity_prep(self) -> dict:
@@ -247,14 +323,22 @@ class ModalityMixin:
         )
         bl_names = [bl.name for bl in bls]
         merged_label = bls[bl_names.index(lbl1)] + bls[bl_names.index(lbl2)]
-        inverse_operator = read_inverse_operator(
-            fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif"
-        )
-        freqs = np.linspace(self.params["frange"][0], self.params["frange"][1], 6)
+        inverse_operator = self._get_inverse_operator()
+
+        fmin, fmax = self.params["frange"]
+        freqs = np.linspace(fmin, fmax, 6)
+        method, take_imag = resolve_connectivity_method(self.params["method"])
+        n_cycles = resolve_n_cycles(freqs, self.params.get("n_cycles", 5), self.winsize)
         return {
             "merged_label": merged_label,
             "inverse_operator": inverse_operator,
             "freqs": freqs,
+            "fmin": fmin,
+            "fmax": fmax,
+            "mode": self.params["mode"],
+            "method": method,
+            "take_imag": take_imag,
+            "n_cycles": n_cycles,
         }
 
     def _sensor_graph_prep(self) -> dict:
@@ -288,9 +372,7 @@ class ModalityMixin:
             bl_names.index(self.params["brain_label_1"]),
             bl_names.index(self.params["brain_label_2"]),
         )
-        inverse_operator = read_inverse_operator(
-            fname=self.subject_dir / "inv" / f"visit_{self.visit}-inv.fif"
-        )
+        inverse_operator = self._get_inverse_operator()
         sos = butter_bandpass(
             self.params["frange"][0],
             self.params["frange"][1],
@@ -302,6 +384,9 @@ class ModalityMixin:
             "bl_idxs": bl_idxs,
             "inverse_operator": inverse_operator,
             "sos": sos,
+            "dist_type": self.params["dist_type"],
+            "alpha": self.params["alpha"],
+            "beta": self.params["beta"],
         }
 
     def _cfc_sensor_prep(self) -> dict:
@@ -395,14 +480,12 @@ class ModalityMixin:
         fft_window: np.ndarray,
         ap_model: np.ndarray,
         gaussian,
+        mask: np.ndarray,
+        freqs_band: np.ndarray,
     ) -> float:
         """Individual peak frequency via aperiodic subtraction + Gaussian fit."""
         data_win = data * fft_window
         fftval = np.abs(np.fft.rfft(data_win, axis=1) / data.shape[-1])
-        freqs = np.fft.rfftfreq(data.shape[-1], d=1.0 / self._sfreq)
-
-        mask = (freqs >= self.params["frange"][0]) & (freqs <= self.params["frange"][1])
-        freqs_band = freqs[mask]
         periodic_power = np.mean(np.square(fftval[:, mask]), axis=0) - ap_model
 
         p0 = [periodic_power.max(), freqs_band[np.argmax(periodic_power)], 1.0]
@@ -456,6 +539,8 @@ class ModalityMixin:
         fmax: float,
         mode: str,
         method: str,
+        take_imag: bool,
+        n_cycles: np.ndarray,
     ) -> float:
         """Sensor-level spectral connectivity between channel pairs."""
         con = spectral_connectivity_time(
@@ -469,9 +554,9 @@ class ModalityMixin:
             faverage=True,
             mode=mode,
             method=method,
-            n_cycles=5,
+            n_cycles=n_cycles,
         )
-        return float(np.squeeze(con.get_data(output="dense"))[indices].mean())
+        return float(_connectivity_values(con, take_imag).mean())
 
     @timed
     def _source_connectivity(
@@ -480,6 +565,12 @@ class ModalityMixin:
         merged_label,
         inverse_operator,
         freqs: np.ndarray,
+        fmin: float,
+        fmax: float,
+        mode: str,
+        method: str,
+        take_imag: bool,
+        n_cycles: np.ndarray,
     ) -> float:
         """Source-level connectivity between two brain labels."""
         raw_data = self._prepare_raw_array(data)
@@ -493,17 +584,19 @@ class ModalityMixin:
         con = spectral_connectivity_time(
             data=np.array([[stcs.lh_data.mean(axis=0), stcs.rh_data.mean(axis=0)]]),
             freqs=freqs,
-            indices=None,
+            # explicit: the single lh->rh connection, so the raveled output is
+            # unambiguous and complex-preserving (see _connectivity_values)
+            indices=(np.array([0]), np.array([1])),
             average=False,
             sfreq=self._sfreq,
-            fmin=self.params["frange"][0],
-            fmax=self.params["frange"][1],
+            fmin=fmin,
+            fmax=fmax,
             faverage=True,
-            mode=self.params["mode"],
-            method=self.params["method"],
-            n_cycles=5,
+            mode=mode,
+            method=method,
+            n_cycles=n_cycles,
         )
-        return float(np.squeeze(con.get_data(output="dense"))[1][0])
+        return float(_connectivity_values(con, take_imag).mean())
 
     @timed
     def _sensor_graph(
@@ -528,6 +621,9 @@ class ModalityMixin:
         bl_idxs: tuple,
         inverse_operator,
         sos: np.ndarray,
+        dist_type: str,
+        alpha: float,
+        beta: float,
     ) -> float:
         """Graph-theoretic connectivity from source-space M/EEG."""
         raw_data = self._prepare_raw_array(data)
@@ -546,9 +642,9 @@ class ModalityMixin:
         tcs_filt = sosfiltfilt(sos, tcs)
         graph_matrix = log_degree_barrier(
             tcs_filt,
-            dist_type=self.params["dist_type"],
-            alpha=self.params["alpha"],
-            beta=self.params["beta"],
+            dist_type=dist_type,
+            alpha=alpha,
+            beta=beta,
         )
         return float(graph_matrix[bl_idxs[0], bl_idxs[1]])
 
@@ -989,6 +1085,8 @@ class ModalityMixin:
         indices_den = _pair_to_indices(self.params["channels_den"])
 
         freqs = np.linspace(self.params["frange"][0], self.params["frange"][1], 6)
+        method, take_imag = resolve_connectivity_method(self.params["method"])
+        n_cycles = resolve_n_cycles(freqs, self.params.get("n_cycles", 5), self.winsize)
 
         return {
             "indices_num": indices_num,
@@ -997,7 +1095,9 @@ class ModalityMixin:
             "fmin": float(self.params["frange"][0]),
             "fmax": float(self.params["frange"][1]),
             "mode": self.params["mode"],
-            "method": self.params["method"],
+            "method": method,
+            "take_imag": take_imag,
+            "n_cycles": n_cycles,
         }
 
     @timed
@@ -1011,42 +1111,32 @@ class ModalityMixin:
         fmax: float,
         mode: str,
         method: str,
+        take_imag: bool,
+        n_cycles: np.ndarray,
     ) -> float:
         """Ratio of functional connectivity between two channel pairs (or groups).
 
         Useful for laterality of connectivity, e.g. ipsilateral / contralateral.
         Returns conn_pair1 / conn_pair2.
         """
-        # Numerator connectivity
-        con_num = spectral_connectivity_time(
-            data=data[np.newaxis, :],
-            freqs=freqs,
-            indices=indices_num,
-            average=False,
-            sfreq=self._sfreq,
-            fmin=fmin,
-            fmax=fmax,
-            faverage=True,
-            mode=mode,
-            method=method,
-            n_cycles=5,
-        )
-        conn_num = float(np.squeeze(con_num.get_data(output="dense"))[indices_num].mean())
 
-        # Denominator connectivity
-        con_den = spectral_connectivity_time(
-            data=data[np.newaxis, :],
-            freqs=freqs,
-            indices=indices_den,
-            average=False,
-            sfreq=self._sfreq,
-            fmin=fmin,
-            fmax=fmax,
-            faverage=True,
-            mode=mode,
-            method=method,
-            n_cycles=5,
-        )
-        conn_den = float(np.squeeze(con_den.get_data(output="dense"))[indices_den].mean())
+        def _connectivity(indices):
+            con = spectral_connectivity_time(
+                data=data[np.newaxis, :],
+                freqs=freqs,
+                indices=indices,
+                average=False,
+                sfreq=self._sfreq,
+                fmin=fmin,
+                fmax=fmax,
+                faverage=True,
+                mode=mode,
+                method=method,
+                n_cycles=n_cycles,
+            )
+            return float(_connectivity_values(con, take_imag).mean())
+
+        conn_num = _connectivity(indices_num)
+        conn_den = _connectivity(indices_den)
 
         return float(conn_num / (conn_den + 1e-30))

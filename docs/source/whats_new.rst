@@ -41,6 +41,39 @@ New features
 Bug fixes
 ^^^^^^^^^
 
+- **Source-space modalities could never run.** ``source_power``,
+  ``source_connectivity`` and ``source_graph`` read the inverse operator from
+  ``visit_{self.visit}-inv.fif``, but ``self.visit`` was never assigned and
+  :meth:`~mne_rt.RTStream.compute_inv_operator` writes a BIDS-style
+  ``sub-<id>_ses-<session>_task-baseline_inv.fif``. All three raised
+  ``AttributeError`` on first use. They now take the operator from the session
+  (falling back to the correct filename on disk) and report an actionable error
+  when no baseline has been recorded.
+- **``method: "imcoh"`` was broken in every connectivity modality.**
+  :func:`~mne_connectivity.spectral_connectivity_time` has no ``"imcoh"`` in its
+  bivariate dispatch table and raised ``KeyError``. Imaginary coherence is now
+  computed as the imaginary part of ``"cohy"`` — an exact identity — in
+  ``sensor_connectivity``, ``connectivity_ratio`` and ``source_connectivity``.
+  Connectivity results are read from the raveled output rather than
+  ``get_data(output="dense")``, which allocates a real array and silently
+  discards the imaginary part.
+- **Theta-band connectivity was impossible at the default window.** ``n_cycles``
+  was hard-coded to 5; a 5-cycle wavelet at 4 Hz spans 1.25 s and does not fit a
+  1 s window. ``n_cycles`` is now configurable per modality and accepts
+  ``"auto"`` to scale with ``winsize``; wavelets that cannot fit are rejected
+  up front with a message naming the offending frequency.
+- ``record_main(modality_params=...)`` raised ``ValueError: Unknown method`` for
+  the documented ``{modality: {param: value}}`` form, and ``AttributeError`` for
+  the flat form (it called ``.update()`` on list-valued parameters). Both forms
+  now work, and unknown parameter names are reported against the modality.
+- ``source_connectivity`` and ``source_graph`` read ``self.params`` on every
+  window, but :meth:`~mne_rt.RTStream.record_main` leaves it holding the *last*
+  prepared modality's parameters — so running them alongside another modality
+  silently used the wrong frequency band, metric or graph weights. All
+  parameters are now captured at prep time. Same fix for ``argmax_freq``.
+- ``sensor_connectivity`` raised ``IndexError`` when given a single channel pair
+  and silently ignored the third and subsequent pairs. Unknown channel names now
+  raise a clear error naming them.
 - Fixed a crash when closing one plot window (e.g. :class:`~mne_rt.viz.RawPlot`
   or :class:`~mne_rt.viz.TopomapPlot`) while other plot windows remained open.
 - :func:`mne.datasets.eegbci.load_data` is now called with
