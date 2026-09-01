@@ -444,46 +444,75 @@ def test_resolve_connectivity_method_passthrough(method):
     assert resolve_connectivity_method(method) == (method, False)
 
 
-def test_spectral_connectivity_time_still_lacks_imcoh():
-    """Pin the upstream gap that resolve_connectivity_method works around.
+def _lagged_pair(seed=3, sfreq=500.0, n_times=2000, phase=0.9):
+    """Two channels sharing a 10 Hz component with a genuine (non-zero) lag."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n_times) / sfreq
+    return np.stack(
+        [
+            np.sin(2 * np.pi * 10 * t) + 0.5 * rng.standard_normal(n_times),
+            np.sin(2 * np.pi * 10 * t + phase) + 0.5 * rng.standard_normal(n_times),
+        ]
+    )[np.newaxis]
 
-    If a future mne-connectivity gains native ``imcoh`` support here, this test
-    fails and the alias in ``_TIME_CON_ALIASES`` can be dropped.
+
+def test_cohy_imag_agrees_with_native_imcoh_when_available():
+    """Cross-check the remap against native ``imcoh`` where the version has it.
+
+    ``spectral_connectivity_time`` gained ``imcoh`` in mne-connectivity 0.9;
+    before that it raised ``KeyError``. We request ``cohy`` and take the
+    imaginary part on every version, so results do not silently change with the
+    resolved dependency. This test asserts the two agree where both exist, and
+    otherwise documents the gap the remap works around.
     """
     mne_connectivity = pytest.importorskip("mne_connectivity")
-    rng = np.random.default_rng(0)
-    data = rng.standard_normal((1, 2, 1000))
-    with pytest.raises(KeyError, match="imcoh"):
-        mne_connectivity.spectral_connectivity_time(
-            data,
-            freqs=np.linspace(8, 13, 6),
-            indices=(np.array([0]), np.array([1])),
-            sfreq=500.0,
-            fmin=8,
-            fmax=13,
-            faverage=True,
-            mode="cwt_morlet",
-            method="imcoh",
-            n_cycles=5,
-            average=False,
-            verbose=False,
+    data = _lagged_pair()
+    indices = (np.array([0]), np.array([1]))
+    kwargs = dict(
+        freqs=np.linspace(8, 13, 6),
+        indices=indices,
+        sfreq=500.0,
+        fmin=8,
+        fmax=13,
+        faverage=True,
+        mode="cwt_morlet",
+        n_cycles=5,
+        average=False,
+        verbose=False,
+    )
+
+    remapped = float(
+        np.imag(
+            np.asarray(
+                mne_connectivity.spectral_connectivity_time(
+                    data, method="cohy", **kwargs
+                ).get_data()
+            ).ravel()[0]
         )
+    )
+
+    try:
+        native = np.asarray(
+            mne_connectivity.spectral_connectivity_time(data, method="imcoh", **kwargs).get_data()
+        ).ravel()[0]
+    except KeyError:
+        # mne-connectivity < 0.9 — exactly the gap resolve_connectivity_method
+        # exists for. The remap must still produce a usable, non-trivial value.
+        assert abs(remapped) > 1e-6
+        return
+
+    np.testing.assert_allclose(remapped, float(np.real(native)), atol=1e-9)
 
 
 def test_cohy_imag_matches_epochs_imcoh():
-    """imag(cohy) is imcoh by definition — check against the epochs implementation."""
+    """imag(cohy) is imcoh by definition — check against the epochs implementation.
+
+    ``spectral_connectivity_epochs`` has had ``imcoh`` all along, so this holds
+    on every supported mne-connectivity version.
+    """
     mne_connectivity = pytest.importorskip("mne_connectivity")
-    rng = np.random.default_rng(3)
-    sfreq, n_times = 500.0, 2000
-    t = np.arange(n_times) / sfreq
-    # two channels sharing a 10 Hz component with a genuine (non-zero) lag
-    base = np.sin(2 * np.pi * 10 * t)
-    data = np.stack(
-        [
-            base + 0.5 * rng.standard_normal(n_times),
-            np.sin(2 * np.pi * 10 * t + 0.9) + 0.5 * rng.standard_normal(n_times),
-        ]
-    )[np.newaxis]
+    sfreq = 500.0
+    data = _lagged_pair(sfreq=sfreq)
     indices = (np.array([0]), np.array([1]))
 
     con_time = mne_connectivity.spectral_connectivity_time(
