@@ -270,9 +270,18 @@ def test_apply_without_kernel_or_label_operator_raises():
 # ===================================================================
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def fsaverage_volume_model():
-    """A real volumetric LCMV SourceModel on fsaverage (~6 s, once per session)."""
+    """A real volumetric LCMV SourceModel on fsaverage (~6 s, built once).
+
+    Module-scoped rather than session-scoped on purpose. Every consumer lives in
+    this file, so it is still constructed exactly once — but a whole-brain 5 mm
+    volume source space carries an interpolator with ~17 M non-zeros over the
+    256³ MRI grid, and together with the forward solution and the beamformer
+    this fixture retains well over 1 GB. Session scope would hold that for the
+    rest of the run, including the Qt visualisation tests, which are already
+    fragile under headless Xvfb.
+    """
     mne = pytest.importorskip("mne")
     try:
         fs_dir = mne.datasets.fetch_fsaverage(verbose=False)
@@ -428,7 +437,7 @@ def test_multi_label_roi_equals_mean_over_all_its_sources(fsaverage_volume_model
 # ------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def baseline_raw():
     """A short EEG recording with digitised positions, for forward modelling."""
     mne = pytest.importorskip("mne")
