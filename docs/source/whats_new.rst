@@ -13,6 +13,29 @@ Version 1.1.0
 New features
 ^^^^^^^^^^^^
 
+- **The same modality can now run several times in one session.** A modality
+  name may carry an instance label after an ``"@"``, so
+  ``modality=["source_connectivity@theta", "source_connectivity@alpha"]``
+  computes one measure in two bands at once — previously impossible, because
+  :meth:`~mne_rt.RTStream.record_main` used the modality name as both the
+  dispatch key and the key for every piece of per-window state, so a repeated
+  name collapsed the two into one. The base modality still selects the config
+  entry and the compute function; the full name distinguishes the instances
+  everywhere they surface: plot traces, protocol keys, combiner feature names,
+  OSC addresses, LSL channels and saved columns. In ``modality_params``, a key
+  naming a base modality applies to all its instances and an instance's own
+  entry takes precedence, so shared settings need only be written once.
+  Protocols are stateful, so each instance needs its own protocol object;
+  passing one keyed by a base modality that has instances now raises rather
+  than quietly firing a single protocol several times per window.
+- ``LSLSender`` now publishes its channel names in the stream description.
+  They were previously stored on the sender and dropped before the outlet was
+  built, despite the documented behaviour, leaving subscribers to identify
+  values by position — ambiguous as soon as two channels share a base modality
+  and differ only by instance label.
+- The sensor → ROI operator is cached alongside the forward model, so several
+  instances of a source modality that share an ROI set build it once rather
+  than once each.
 - **Feature combiners are now wired into the live loop.** The four
   :class:`~mne_rt.FeatureCombiner` subclasses existed and were unit-tested, but
   nothing ever called them: :meth:`~mne_rt.RTStream.record_main` had no way to
@@ -133,6 +156,13 @@ Bug fixes
   beamformer exclude them themselves and
   :class:`~mne_rt.tools.RTMaxwellFilter` needs them marked to reconstruct them
   through the SSS expansion.
+- ``instantaneous_phase`` and ``laterality_erd_ers`` had no entry in the
+  display-scale table, so running either with ``show_nf_signal=True`` raised
+  ``KeyError`` as soon as the first window was plotted. Both now have one, and
+  an unknown name falls back to its base modality's scale rather than raising.
+- OSC and LSL send failures in the neurofeedback loop were swallowed silently,
+  so a session could run to completion delivering no feedback at all with no
+  indication of why. The first failure of each is now logged.
 - **Corrected several dependency lower bounds that were never satisfiable.**
   CI only ever installed the newest release of each dependency, so the minimum
   versions declared in ``pyproject.toml`` had never been tested. Installing

@@ -997,3 +997,62 @@ def test_alias_inside_an_explicit_mapping(fake_atlas):
         "ctx-lh-parstriangularis",
         "ctx-lh-superiortemporal",
     )
+
+
+def test_two_bands_share_one_source_model_and_kernel(tmp_path, monkeypatch):
+    """Two instances of a source modality must not rebuild the head model.
+
+    This is the Aphasia_NF shape: one ROI set, one inverse method, several
+    frequency bands. The forward model and the sensor-to-ROI operator depend
+    on none of what differs between them.
+    """
+    import mne_rt.modalities as modalities
+
+    model = _StubModel()
+    n_model_builds = [0]
+    n_kernel_builds = [0]
+
+    def _fake_get_model(self, **kw):
+        n_model_builds[0] += 1
+        return model
+
+    real_roi_kernel = model.roi_kernel
+
+    def _counting_roi_kernel(rois, mri_resolution=True):
+        n_kernel_builds[0] += 1
+        return real_roi_kernel(rois, mri_resolution=mri_resolution)
+
+    model.roi_kernel = _counting_roi_kernel
+    monkeypatch.setattr(modalities.ModalityMixin, "_get_source_model", _fake_get_model)
+    monkeypatch.setattr(
+        modalities,
+        "resolve_rois",
+        lambda names, **kw: [
+            ROI(name=(n if isinstance(n, str) else next(iter(n))), members=("x",), kind="volume")
+            for n in names
+        ],
+    )
+
+    base = {
+        "rois": ["Broca", "Wernicke"],
+        "atlas": "aparc+aseg",
+        "method": "imcoh",
+        "mode": "cwt_morlet",
+        "inverse_method": "LCMV",
+    }
+    obj = _modality_obj(tmp_path, dict(base, frange=[4, 8]))
+
+    # Two instances, exactly as record_main preps them: same object, params
+    # swapped between prep calls.
+    obj.params = dict(base, frange=[4, 8])
+    theta = obj._source_connectivity_prep()
+    obj.params = dict(base, frange=[8, 13])
+    alpha = obj._source_connectivity_prep()
+
+    # Each instance keeps its own band ...
+    assert theta["freqs"][0] != alpha["freqs"][0]
+    assert theta["freqs"].max() <= 8 and alpha["freqs"].min() >= 8
+    # ... while the expensive, band-independent parts are built once.
+    assert n_model_builds[0] == 2  # memoised inside _get_source_model itself
+    assert n_kernel_builds[0] == 1
+    assert theta["kernel"] is alpha["kernel"]

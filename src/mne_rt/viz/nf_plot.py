@@ -32,6 +32,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from mne_rt._naming import split_modality
+
 # --------------------------------------------------------------------------
 # Constants
 # --------------------------------------------------------------------------
@@ -84,6 +86,31 @@ _UNITS = {
     "spectral_centroid": "Hz",
     "decode": "",
 }
+
+
+def _label_for(mod: str) -> str:
+    """Axis label for a modality, with its instance label in parentheses."""
+    base, label = split_modality(mod)
+    text = _LABELS.get(base, base)
+    return f"{text} ({label})" if label else text
+
+
+def _unit_for(mod: str) -> str:
+    """Unit string for a modality; an instance inherits its base's unit."""
+    return _UNITS.get(split_modality(mod)[0], "")
+
+
+def _scale_for(scales: dict, mod: str) -> float:
+    """Display scale for a modality, falling back to its base modality.
+
+    Membership is tested rather than using ``.get(...) or``, so a deliberate
+    ``0.0`` is not silently replaced by the fallback.
+    """
+    if mod in scales:
+        return scales[mod]
+    base = split_modality(mod)[0]
+    return scales[base] if base in scales else 1.0
+
 
 _TIME_WINDOW_OPTIONS = [5, 10, 20, 30, 60]
 
@@ -300,7 +327,7 @@ class NFPlot(QMainWindow):
             self._reward_regions.append([])
 
             # Label the left axis with the modality name in its colour
-            pi.setLabel("left", _LABELS.get(mod, mod), color=color, size="10pt")
+            pi.setLabel("left", _label_for(mod), color=color, size="10pt")
             pi.getAxis("left").setWidth(110)
 
             for ax_name in ("left", "bottom"):
@@ -475,7 +502,7 @@ class NFPlot(QMainWindow):
             row = QHBoxLayout()
             row.setSpacing(3)
 
-            lbl = QLabel(_LABELS.get(mod, mod))
+            lbl = QLabel(_label_for(mod))
             lbl.setStyleSheet(f"color: {color}; font-weight: bold;")
             lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -692,7 +719,8 @@ class NFPlot(QMainWindow):
         arr = np.asarray(new_vals, dtype=float)
         norm = np.array(
             [
-                (arr[i] / (self._scales[self._mods[i]] + 1e-300)) * self._channel_scales[i]
+                (arr[i] / (_scale_for(self._scales, self._mods[i]) + 1e-300))
+                * self._channel_scales[i]
                 for i in range(self._n)
             ]
         )
@@ -711,10 +739,8 @@ class NFPlot(QMainWindow):
         for i, curve in enumerate(self._curves):
             curve.setData(self._time_axis, self._buf[i])
             val = arr[i]
-            unit = _UNITS.get(self._mods[i], "")
-            part = f"{_LABELS.get(self._mods[i], self._mods[i])}: {val:.4g}" + (
-                f" {unit}" if unit else ""
-            )
+            unit = _unit_for(self._mods[i])
+            part = f"{_label_for(self._mods[i])}: {val:.4g}" + (f" {unit}" if unit else "")
 
             if thresholds is not None:
                 thr = thresholds[i]
@@ -725,7 +751,7 @@ class NFPlot(QMainWindow):
                     line.setVisible(False)
                 else:
                     thr_norm = (
-                        thr_f / (self._scales[self._mods[i]] + 1e-300)
+                        thr_f / (_scale_for(self._scales, self._mods[i]) + 1e-300)
                     ) * self._channel_scales[i]
                     line.setPos(thr_norm)
                     # InfiniteLine's "{value}" label placeholder auto-fills

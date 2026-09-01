@@ -264,6 +264,74 @@ def test_get_params_does_not_mutate_config_between_calls(config_file):
 
 
 # ------------------------------------------------------------------
+# get_params — instanced modalities ("base@label")
+# ------------------------------------------------------------------
+
+
+def test_get_params_instanced_name_uses_base_defaults(config_file):
+    params = get_params(config_file, "sensor_power@alpha", {})
+    assert params["frange"] == [8, 13]
+    assert params["method"] == "welch"
+
+
+def test_get_params_instance_kwarg_matches_inline_form(config_file):
+    """Passing the base plus instance= is how record_main avoids re-splitting."""
+    overrides = {"sensor_power@alpha": {"frange": [10, 12]}}
+    inline = get_params(config_file, "sensor_power@alpha", overrides)
+    split = get_params(config_file, "sensor_power", overrides, instance="sensor_power@alpha")
+    assert inline == split == {**inline, "frange": [10, 12]}
+
+
+def test_get_params_instance_must_match_base(config_file):
+    with pytest.raises(ValueError, match="not an instance of"):
+        get_params(config_file, "sensor_power", {}, instance="hjorth@alpha")
+
+
+def test_get_params_base_entry_applies_to_every_instance(config_file):
+    """A base entry is the shared default for all its instances."""
+    overrides = {"sensor_power": {"method": "multitaper"}}
+    for name in ("sensor_power@alpha", "sensor_power@theta"):
+        assert get_params(config_file, name, overrides)["method"] == "multitaper"
+
+
+def test_get_params_instance_entry_beats_base_entry(config_file):
+    overrides = {
+        "sensor_power": {"frange": [1, 2], "method": "multitaper"},
+        "sensor_power@alpha": {"frange": [8, 13]},
+    }
+    params = get_params(config_file, "sensor_power@alpha", overrides)
+    assert params["frange"] == [8, 13]  # instance wins
+    assert params["method"] == "multitaper"  # base still applies
+
+
+def test_get_params_instances_are_independent(config_file):
+    """The whole point of A5: two instances, two different parameter sets."""
+    overrides = {
+        "sensor_power@alpha": {"frange": [8, 13]},
+        "sensor_power@theta": {"frange": [4, 8]},
+    }
+    assert get_params(config_file, "sensor_power@alpha", overrides)["frange"] == [8, 13]
+    assert get_params(config_file, "sensor_power@theta", overrides)["frange"] == [4, 8]
+
+
+def test_get_params_instance_key_is_detected_as_nested(config_file):
+    """An '@' key alone must not make the dict look like the flat form."""
+    overrides = {"hjorth@x": {"frange": [1, 2]}}
+    # names another modality entirely -> no effect here, and no "Unknown parameter"
+    assert get_params(config_file, "sensor_power", overrides)["frange"] == [8, 13]
+
+
+def test_get_params_unknown_param_in_instance_override_names_the_instance(config_file):
+    with pytest.raises(ValueError, match=r"sensor_power@alpha"):
+        get_params(config_file, "sensor_power@alpha", {"sensor_power@alpha": {"nope": 1}})
+
+
+def test_get_params_unknown_base_of_instance_raises(config_file):
+    with pytest.raises(ValueError, match="Unknown modality"):
+        get_params(config_file, "not_a_modality@alpha", {})
+
+
+# ------------------------------------------------------------------
 # compute_bandpower
 # ------------------------------------------------------------------
 

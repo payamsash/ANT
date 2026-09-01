@@ -55,9 +55,15 @@ class MultiBandProtocol:
     Notes
     -----
     Call ``evaluate(up_value, down_value)`` with TWO positional arguments —
-    one from each modality/band.  Configure ``RTStream`` with
-    ``modality=["sensor_power_alpha", "sensor_power_theta"]`` (or similar)
-    and unpack the two returned values before each call.
+    one from each modality/band.  Configure ``RTStream`` with two instances of
+    the modality, ``modality=["sensor_power@alpha", "sensor_power@theta"]``,
+    giving each its own ``frange`` via ``modality_params``.
+
+    Because ``evaluate`` takes two arguments, this protocol **cannot** be
+    passed to :meth:`~mne_rt.RTStream.record_main` via ``protocol=``, which
+    calls ``evaluate(value)`` with one.  Drive it yourself from the two
+    traces in :attr:`~mne_rt.RTStream.nf_data` after the session, or from a
+    custom loop.
 
     Examples
     --------

@@ -35,15 +35,19 @@ Pass to :meth:`~mne_rt.RTStream.record_main` alongside (or instead of) OSC::
 from __future__ import annotations
 
 import threading
-from typing import Sequence
+from typing import Optional, Sequence
+
+from mne_rt._logging import logger
 
 
 class LSLSender:
     """Thread-safe LSL outlet that broadcasts NF feature values.
 
     Creates a single-source LSL stream with ``n_channels`` float32 channels
-    (one per active NF modality).  Channel labels are set from the modality
-    names on the first :meth:`push` call.
+    (one per active NF modality).  Channel labels are published in the stream
+    description, so subscribers can select a value by name rather than by
+    position -- taken from ``channel_names`` if given, otherwise from the
+    modality names on the first :meth:`push` call.
 
     Parameters
     ----------
@@ -61,6 +65,12 @@ class LSLSender:
         (i.e. one sample per NF window, not a fixed rate).
     source_id : str, default "ant_nf_outlet"
         Unique source identifier embedded in the stream info.
+    channel_names : sequence of str | None, default None
+        Channel labels to publish in the stream description.  When omitted,
+        they are taken from the modality names on the first :meth:`push`,
+        which rebuilds the outlet once and so briefly drops any subscriber
+        that had already resolved the stream.  Pass them here when they are
+        known in advance to avoid that.
 
     Raises
     ------
@@ -91,6 +101,7 @@ class LSLSender:
         n_channels: int = 8,
         srate: float = 0.0,
         source_id: str = "ant_nf_outlet",
+        channel_names: Optional[Sequence[str]] = None,
     ) -> None:
         self._StreamInfo, self._StreamOutlet = self._import_lsl()
 
@@ -101,10 +112,13 @@ class LSLSender:
 
         self._n_channels = n_channels
         self._outlet = None
-        self._channel_labels: list[str] = []
+        self._channel_labels: list[str] = list(channel_names) if channel_names else []
+        # Publishing names means rebuilding the outlet, which drops subscribers.
+        # Naming the channels here avoids that entirely.
+        self._names_published = bool(channel_names)
         self._lock = threading.Lock()
 
-        self._outlet = self._make_outlet(n_channels)
+        self._outlet = self._make_outlet(n_channels, self._channel_labels)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -130,7 +144,7 @@ class LSLSender:
                 "mne_lsl is a core dependency and should already be present."
             ) from exc
 
-    def _make_outlet(self, n_channels: int):
+    def _make_outlet(self, n_channels: int, labels: Optional[Sequence[str]] = None):
         info = self._StreamInfo(
             name=self.stream_name,
             stype=self.stream_type,
@@ -139,15 +153,40 @@ class LSLSender:
             dtype="float32",
             source_id=self.source_id,
         )
+        if labels:
+            # Subscribers should be able to find a value by name rather than by
+            # position -- which matters most when two channels share a base
+            # modality and differ only by instance label.  Pad, because the
+            # outlet may carry more channels than there are active modalities.
+            names = list(labels)[:n_channels]
+            names += [f"ch{i}" for i in range(len(names), n_channels)]
+            try:
+                # mne_lsl's StreamInfo; the pylsl fallback has no such setter,
+                # and labels are a convenience, never worth failing a session for.
+                info.set_channel_names(names)
+            except Exception:
+                logger.debug("Could not set LSL channel names.", exc_info=True)
         return self._StreamOutlet(info)
 
-    def _ensure_channels(self, n: int) -> None:
-        """Recreate the outlet if the channel count needs to grow."""
-        if n <= self._n_channels:
+    def _ensure_channels(self, n: int, labels: Optional[Sequence[str]] = None) -> None:
+        """Recreate the outlet if the channel count needs to grow, or to name it.
+
+        Rebuilding drops existing subscribers, so it happens at most twice in a
+        session: if the outlet has to widen, and once to publish channel names
+        the first time a caller supplies them.  Later name changes are recorded
+        but do not rebuild — otherwise alternating :meth:`push_value` calls
+        would tear the outlet down on every sample.
+        """
+        grow = n > self._n_channels
+        name_it = bool(labels) and not self._names_published
+        if labels:
+            self._channel_labels = list(labels)
+        if not (grow or name_it):
             return
         self._outlet.close() if hasattr(self._outlet, "close") else None
-        self._n_channels = n
-        self._outlet = self._make_outlet(n)
+        self._n_channels = max(n, self._n_channels)
+        self._names_published = self._names_published or name_it
+        self._outlet = self._make_outlet(self._n_channels, self._channel_labels)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -180,11 +219,12 @@ class LSLSender:
 
         n = len(values)
         with self._lock:
-            self._ensure_channels(n)
+            # Labels first: they are published in the StreamInfo, so the outlet
+            # has to carry them before the sample goes out, not after.
+            self._ensure_channels(n, modalities)
             # Pad with zeros if outlet has more channels than active modalities
             sample = list(values) + [0.0] * (self._n_channels - n)
             self._outlet.push_sample(sample)
-            self._channel_labels = list(modalities)
 
     def push_value(self, modality: str, value: float) -> None:
         """Push a single-channel NF value.
