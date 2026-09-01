@@ -2638,7 +2638,7 @@ class RTStream(ModalityMixin):
         """
         self._ensure_dirs()
         src_type = src_type if src_type is not None else self.source_space
-        self.inv, self.fwd, self.noise_cov, self.src = _compute_inv_operator(
+        self.inv, self.fwd, self.noise_cov, self.src, _raw_fwd = _compute_inv_operator(
             self.raw_baseline,
             subject_fs_id=self.subject_fs_id,
             subjects_fs_dir=self.subjects_fs_dir,
@@ -2659,9 +2659,19 @@ class RTStream(ModalityMixin):
         if data_cov is not None:
             self.data_cov = data_cov
         else:
-            self.data_cov = compute_raw_covariance(
-                self.raw_baseline, method=data_cov_method, verbose=False
+            # Estimate on `_raw_fwd`, the recording the forward model and noise
+            # covariance were built from — same channels, same average-reference
+            # projection. Using self.raw_baseline here would hand make_lcmv a
+            # projected info together with an unprojected covariance.
+            self.data_cov = compute_raw_covariance(_raw_fwd, method=data_cov_method, verbose=False)
+
+        # The cached SourceModels were built from the previous baseline's forward
+        # model and covariances; a new baseline invalidates them.
+        if getattr(self, "_source_models", None):
+            logger.info(
+                "New baseline: discarding %d cached source model(s).", len(self._source_models)
             )
+        self._source_models = {}
 
         inv_dir = self.subject_dir / "inv"
         _stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"

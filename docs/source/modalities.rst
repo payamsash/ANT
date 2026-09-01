@@ -539,6 +539,36 @@ Source connectivity is more anatomically interpretable than sensor
 connectivity and is recommended when an MRI and FreeSurfer reconstruction are
 available.
 
+Connectivity is computed between **arbitrary ROI pairs** — within or across
+hemispheres, cortical or subcortical.  ROIs are named groups of atlas labels
+(see :func:`~mne_rt.resolve_rois`), so a region spanning several parcels
+behaves as one:
+
+.. code-block:: yaml
+
+   source_connectivity:
+     frange: [8, 13]
+     rois: ["Broca", "Wernicke", "Hippocampus-lh"]
+     pairs:
+       - ["Broca", "Wernicke"]        # both left hemisphere
+       - ["Broca", "Hippocampus-lh"]  # cortical ↔ subcortical
+     atlas: "aparc+aseg"
+     method: "imcoh"
+     inverse_method: "LCMV"
+
+``pairs`` may be omitted when exactly two ROIs are configured.  The reported
+value is the mean over pairs; ``signed: true`` keeps the sign (which region
+leads) instead of the magnitude.
+
+.. note::
+
+   Subcortical ROIs require a **volume** source space —
+   ``RTStream(source_space="volume")`` with the volumetric ``aparc+aseg``
+   atlas.  There, only ``inverse_method="LCMV"`` yields a signed time course;
+   a minimum-norm estimate on a volume source space returns a magnitude, which
+   has no phase, so phase-based metrics (``imcoh``, ``plv``, ``wpli``, …) are
+   refused rather than silently computed on it.
+
 ----
 
 .. _modality-source_graph:

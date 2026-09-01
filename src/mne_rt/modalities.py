@@ -50,6 +50,7 @@ from scipy.optimize import curve_fit
 from scipy.signal import butter, sosfiltfilt, welch
 
 from mne_rt._logging import logger
+from mne_rt.source import SourceModel, resolve_rois
 from mne_rt.tools import (
     butter_bandpass,
     compute_bandpower,
@@ -60,6 +61,25 @@ from mne_rt.tools import (
     resolve_n_cycles,
     timed,
 )
+
+#: Inverse solutions the source-space modalities accept.
+_SOURCE_METHODS = frozenset({"MNE", "dSPM", "sLORETA", "eLORETA", "LCMV"})
+
+#: Connectivity metrics that are meaningless on a magnitude (phase-free) source
+#: estimate, because they are defined in terms of relative phase.
+_PHASE_SENSITIVE_METRICS = frozenset({"imcoh", "cohy", "plv", "ciplv", "pli", "wpli"})
+
+
+def model_supports_phase(model) -> bool:
+    """Whether a source model preserves phase.
+
+    A free-orientation estimate combines three orientations by norm, giving a
+    non-negative magnitude with no phase — so any phase-based connectivity
+    measure computed on it is meaningless.  Fixed-orientation solutions (LCMV
+    with ``pick_ori="max-power"``, or a surface minimum-norm estimate with
+    ``pick_ori="normal"``) keep the signed time course.
+    """
+    return bool(model.supports_kernel)
 
 
 def _connectivity_values(con, take_imag: bool) -> np.ndarray:
@@ -144,6 +164,92 @@ class ModalityMixin:
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
+
+    def _get_source_model(self, *, method: str, atlas: str):
+        """Return a :class:`~mne_rt.SourceModel`, building it at most once.
+
+        Memoised on ``(method, atlas)`` so that several source modalities — for
+        example the same connectivity measure in two frequency bands — share one
+        forward model and one beamformer instead of each paying to build their own.
+        """
+        cache = getattr(self, "_source_models", None)
+        if cache is None:
+            cache = self._source_models = {}
+        key = (str(method), str(atlas))
+        if key not in cache:
+            cache[key] = SourceModel.from_stream(self, method=method, atlas=atlas)
+            logger.info("Built %r for method=%s atlas=%s", cache[key], method, atlas)
+        return cache[key]
+
+    def _roi_names(self, *legacy_keys: str) -> list:
+        """ROI spec from ``rois``, falling back to the deprecated label keys."""
+        rois = self.params.get("rois")
+        if rois:
+            return list(rois) if not isinstance(rois, (str, dict)) else [rois]
+
+        legacy = [self.params[key] for key in legacy_keys if self.params.get(key)]
+        if not legacy:
+            raise ValueError(
+                "No ROIs configured. Set 'rois' for this modality, e.g. "
+                "rois: ['Broca', 'Wernicke']. Use mne_rt.list_rois() to see what "
+                "the chosen atlas provides."
+            )
+        warn(
+            f"{legacy_keys} is deprecated; use 'rois' (and 'pairs' where a modality "
+            "needs specific ROI pairs) instead. Support will be removed in a future "
+            "release.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return legacy
+
+    def _source_prep_common(self, *, inverse_method: str) -> dict:
+        """Resolve ROIs and build the cached sensor → ROI operator."""
+        # `atlas: null` in the config means "use the session's", which is what
+        # makes RTStream(source_space="volume") pick a volumetric atlas without
+        # every modality having to restate it.
+        atlas = self.params.get("atlas") or getattr(self, "source_atlas", None) or "aparc"
+        model = self._get_source_model(method=inverse_method, atlas=atlas)
+        rois = resolve_rois(
+            self._roi_names("brain_label", "brain_label_1", "brain_label_2"),
+            atlas=atlas,
+            subject=self.subject_fs_id,
+            subjects_dir=self.subjects_fs_dir,
+        )
+        mri_resolution = bool(self.params.get("mri_resolution", True))
+
+        if model.supports_kernel:
+            return {
+                "model": model,
+                "rois": rois,
+                "kernel": model.roi_kernel(rois, mri_resolution=mri_resolution),
+                # The operator's columns follow the forward model's channels, which
+                # exclude bads and any channel without a digitised position, so the
+                # data must be selected/reordered to match.
+                "ch_picks": model.channel_picks(self.rec_info["ch_names"]),
+                "label_operator": None,
+            }
+
+        warn(
+            f"{model!r} cannot use the cached-kernel path, so every window will run a "
+            "full source estimate — roughly two orders of magnitude slower, and likely "
+            "too slow to keep up with the acquisition loop. Use method='LCMV', or a "
+            "surface source space with a minimum-norm method.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+        return {
+            "model": model,
+            "rois": rois,
+            "kernel": None,
+            "ch_picks": None,
+            "label_operator": model.label_operator(rois, mri_resolution=mri_resolution),
+        }
+
+    @staticmethod
+    def _roi_time_courses(model, data, kernel, ch_picks, label_operator) -> np.ndarray:
+        """ROI time courses ``(n_roi, n_times)`` for one analysis window."""
+        return model.apply(data, kernel=kernel, ch_picks=ch_picks, label_operator=label_operator)
 
     def _get_inverse_operator(self):
         """Return the fitted inverse operator, from memory or from disk.
@@ -248,43 +354,20 @@ class ModalityMixin:
         }
 
     def _source_power_prep(self) -> dict:
+        method = self.params["method"]
+        if method not in _SOURCE_METHODS:
+            raise ValueError(
+                f"Unknown source method: {method!r}. Expected one of {sorted(_SOURCE_METHODS)}."
+            )
         fft_window, _, freq_band_idxs, _ = compute_fft(
             sfreq=self._sfreq,
             winsize=self.winsize,
             freq_range=self.params["frange"],
         )
-        bls = read_labels_from_annot(
-            subject=self.subject_fs_id,
-            parc=self.params["atlas"],
-            subjects_dir=self.subjects_fs_dir,
-        )
-        brain_label = bls[[bl.name for bl in bls].index(self.params["brain_label"])]
-
-        method = self.params["method"]
-        if method in ("MNE", "dSPM", "sLORETA", "eLORETA"):
-            inverse_operator = self._get_inverse_operator()
-        elif method == "LCMV":
-            inverse_operator = make_lcmv(
-                self.rec_info,
-                self.fwd,
-                self.noise_cov,
-                reg=0.05,
-                pick_ori="max-power",
-                weight_norm="unit-noise-gain",
-                rank=None,
-            )
-        else:
-            raise ValueError(
-                f"Unknown source method: {method!r}. "
-                "Expected one of 'MNE', 'dSPM', 'sLORETA', 'eLORETA', 'LCMV'."
-            )
-
         return {
+            **self._source_prep_common(inverse_method=method),
             "fft_window": fft_window,
             "freq_band_idxs": freq_band_idxs,
-            "brain_label": brain_label,
-            "inverse_operator": inverse_operator,
-            "method": method,
         }
 
     def _sensor_connectivity_prep(self) -> dict:
@@ -319,28 +402,55 @@ class ModalityMixin:
         }
 
     def _source_connectivity_prep(self) -> dict:
-        lbl1, lbl2 = self.params["brain_label_1"], self.params["brain_label_2"]
-        if not lbl1.endswith("-lh"):
-            raise ValueError(f"brain_label_1 must end with '-lh', got {lbl1!r}.")
-        if not lbl2.endswith("-rh"):
-            raise ValueError(f"brain_label_2 must end with '-rh', got {lbl2!r}.")
+        inverse_method = self.params.get("inverse_method", "dSPM")
+        if inverse_method not in _SOURCE_METHODS:
+            raise ValueError(
+                f"Unknown inverse_method: {inverse_method!r}. "
+                f"Expected one of {sorted(_SOURCE_METHODS)}."
+            )
+        common = self._source_prep_common(inverse_method=inverse_method)
+        rois = common["rois"]
+        roi_names = [roi.name for roi in rois]
 
-        bls = read_labels_from_annot(
-            subject=self.subject_fs_id,
-            parc=self.params["atlas"],
-            subjects_dir=self.subjects_fs_dir,
-        )
-        bl_names = [bl.name for bl in bls]
-        merged_label = bls[bl_names.index(lbl1)] + bls[bl_names.index(lbl2)]
-        inverse_operator = self._get_inverse_operator()
+        pairs = self.params.get("pairs")
+        if not pairs:
+            if len(roi_names) != 2:
+                raise ValueError(
+                    f"source_connectivity needs 'pairs' when more than two ROIs are "
+                    f"configured; got {len(roi_names)} ROIs {roi_names} and no pairs. "
+                    'Example: pairs: [["Broca", "Wernicke"]]'
+                )
+            pairs = [roi_names]  # two ROIs, one obvious connection
+
+        seeds, targets = [], []
+        for pair in pairs:
+            if len(pair) != 2:
+                raise ValueError(f"Each entry of 'pairs' must name two ROIs, got {pair!r}.")
+            for name, bucket in zip(pair, (seeds, targets)):
+                if name not in roi_names:
+                    raise ValueError(
+                        f"Pair member {name!r} is not among the configured ROIs {roi_names}."
+                    )
+                bucket.append(roi_names.index(name))
+        indices = (np.array(seeds), np.array(targets))
+
+        if not model_supports_phase(common["model"]):
+            method_name = self.params["method"]
+            if method_name in _PHASE_SENSITIVE_METRICS:
+                raise ValueError(
+                    f"Connectivity metric {method_name!r} depends on phase, but "
+                    f"{common['model']!r} produces a magnitude (a free-orientation "
+                    "estimate combines three orientations by norm). Use "
+                    "inverse_method='LCMV', or a surface source space."
+                )
 
         fmin, fmax = self.params["frange"]
-        freqs = np.linspace(fmin, fmax, 6)
+        freqs = np.linspace(fmin, fmax, int(self.params.get("n_freqs", 6)))
         method, take_imag = resolve_connectivity_method(self.params["method"])
         n_cycles = resolve_n_cycles(freqs, self.params.get("n_cycles", 5), self.winsize)
         return {
-            "merged_label": merged_label,
-            "inverse_operator": inverse_operator,
+            **common,
+            "indices": indices,
             "freqs": freqs,
             "fmin": fmin,
             "fmax": fmax,
@@ -348,6 +458,7 @@ class ModalityMixin:
             "method": method,
             "take_imag": take_imag,
             "n_cycles": n_cycles,
+            "signed": bool(self.params.get("signed", False)),
         }
 
     def _sensor_graph_prep(self) -> dict:
@@ -371,17 +482,28 @@ class ModalityMixin:
         }
 
     def _source_graph_prep(self) -> dict:
-        bls = read_labels_from_annot(
-            subject=self.subject_fs_id,
-            parc=self.params["atlas"],
-            subjects_dir=self.subjects_fs_dir,
-        )
-        bl_names = [bl.name for bl in bls]
-        bl_idxs = (
-            bl_names.index(self.params["brain_label_1"]),
-            bl_names.index(self.params["brain_label_2"]),
-        )
-        inverse_operator = self._get_inverse_operator()
+        inverse_method = self.params.get("inverse_method", "dSPM")
+        if inverse_method not in _SOURCE_METHODS:
+            raise ValueError(
+                f"Unknown inverse_method: {inverse_method!r}. "
+                f"Expected one of {sorted(_SOURCE_METHODS)}."
+            )
+        common = self._source_prep_common(inverse_method=inverse_method)
+        roi_names = [roi.name for roi in common["rois"]]
+        if len(roi_names) < 2:
+            raise ValueError(
+                f"source_graph learns a graph over ROIs and needs at least two; got {roi_names}."
+            )
+
+        pair = self.params.get("pair")
+        if pair is None:
+            pairs = self.params.get("pairs")
+            pair = pairs[0] if pairs else roi_names[:2]
+        missing = [name for name in pair if name not in roi_names]
+        if missing:
+            raise ValueError(f"Edge member(s) {missing} are not among the ROIs {roi_names}.")
+        edge = (roi_names.index(pair[0]), roi_names.index(pair[1]))
+
         sos = butter_bandpass(
             self.params["frange"][0],
             self.params["frange"][1],
@@ -389,9 +511,8 @@ class ModalityMixin:
             order=5,
         )
         return {
-            "bls": bls,
-            "bl_idxs": bl_idxs,
-            "inverse_operator": inverse_operator,
+            **common,
+            "edge": edge,
             "sos": sos,
             "dist_type": self.params["dist_type"],
             "alpha": self.params["alpha"],
@@ -513,29 +634,18 @@ class ModalityMixin:
     def _source_power(
         self,
         data: np.ndarray,
+        model,
+        rois: list,
+        kernel,
+        ch_picks,
+        label_operator,
         fft_window: np.ndarray,
         freq_band_idxs: np.ndarray,
-        brain_label,
-        inverse_operator,
-        method: str,
     ) -> float:
-        """Source-level band power in a brain label."""
-        raw_data = self._prepare_raw_array(data)
-
-        if method in ("MNE", "dSPM", "sLORETA", "eLORETA"):
-            stc_data = apply_inverse_raw(
-                raw_data,
-                inverse_operator,
-                lambda2=1.0 / 9,
-                method=method,
-                pick_ori="normal",
-                label=brain_label,
-            ).data
-        else:
-            stc_data = apply_lcmv_raw(raw_data, inverse_operator).data
-
-        stc_data = stc_data * fft_window
-        fft_val = np.abs(np.fft.rfft(stc_data, axis=1) / stc_data.shape[-1])
+        """Band power averaged over the configured source-space ROIs."""
+        tcs = self._roi_time_courses(model, data, kernel, ch_picks, label_operator)
+        tcs = tcs * fft_window
+        fft_val = np.abs(np.fft.rfft(tcs, axis=1) / tcs.shape[-1])
         return float(np.mean(np.square(fft_val[:, freq_band_idxs])))
 
     @timed
@@ -571,8 +681,12 @@ class ModalityMixin:
     def _source_connectivity(
         self,
         data: np.ndarray,
-        merged_label,
-        inverse_operator,
+        model,
+        rois: list,
+        kernel,
+        ch_picks,
+        label_operator,
+        indices: tuple,
         freqs: np.ndarray,
         fmin: float,
         fmax: float,
@@ -580,22 +694,14 @@ class ModalityMixin:
         method: str,
         take_imag: bool,
         n_cycles: np.ndarray,
+        signed: bool,
     ) -> float:
-        """Source-level connectivity between two brain labels."""
-        raw_data = self._prepare_raw_array(data)
-        stcs = apply_inverse_raw(
-            raw_data,
-            inverse_operator,
-            lambda2=1.0 / 9,
-            pick_ori="normal",
-            label=merged_label,
-        )
+        """Connectivity between the configured source-space ROI pairs."""
+        tcs = self._roi_time_courses(model, data, kernel, ch_picks, label_operator)
         con = spectral_connectivity_time(
-            data=np.array([[stcs.lh_data.mean(axis=0), stcs.rh_data.mean(axis=0)]]),
+            data=tcs[np.newaxis],
             freqs=freqs,
-            # explicit: the single lh->rh connection, so the raveled output is
-            # unambiguous and complex-preserving (see _connectivity_values)
-            indices=(np.array([0]), np.array([1])),
+            indices=indices,
             average=False,
             sfreq=self._sfreq,
             fmin=fmin,
@@ -605,7 +711,12 @@ class ModalityMixin:
             method=method,
             n_cycles=n_cycles,
         )
-        return float(_connectivity_values(con, take_imag).mean())
+        values = _connectivity_values(con, take_imag)
+        if not signed:
+            # imcoh and friends are signed: the sign encodes which region leads.
+            # For a reward signal the magnitude is usually what is wanted.
+            values = np.abs(values)
+        return float(values.mean())
 
     @timed
     def _sensor_graph(
@@ -626,28 +737,19 @@ class ModalityMixin:
     def _source_graph(
         self,
         data: np.ndarray,
-        bls: list,
-        bl_idxs: tuple,
-        inverse_operator,
+        model,
+        rois: list,
+        kernel,
+        ch_picks,
+        label_operator,
+        edge: tuple,
         sos: np.ndarray,
         dist_type: str,
         alpha: float,
         beta: float,
     ) -> float:
-        """Graph-theoretic connectivity from source-space M/EEG."""
-        raw_data = self._prepare_raw_array(data)
-        stcs = apply_inverse_raw(
-            raw_data,
-            inverse_operator,
-            lambda2=1.0 / 9,
-            pick_ori="normal",
-        )
-        tcs = stcs.extract_label_time_course(
-            bls,
-            src=inverse_operator["src"],
-            mode="mean_flip",
-            allow_empty=True,
-        )
+        """Learned graph edge weight between two source-space ROIs."""
+        tcs = self._roi_time_courses(model, data, kernel, ch_picks, label_operator)
         tcs_filt = sosfiltfilt(sos, tcs)
         graph_matrix = log_degree_barrier(
             tcs_filt,
@@ -655,7 +757,7 @@ class ModalityMixin:
             alpha=alpha,
             beta=beta,
         )
-        return float(graph_matrix[bl_idxs[0], bl_idxs[1]])
+        return float(graph_matrix[edge[0], edge[1]])
 
     @timed
     def _cfc_sensor(self, data: np.ndarray, comod) -> float:

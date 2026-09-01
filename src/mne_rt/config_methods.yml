@@ -166,36 +166,62 @@ NF_modality:
   #   • A FreeSurfer reconstruction (subjects_dir)
   #   • A completed record_baseline() (noise covariance + inverse operator)
 
+  # ROIs are named groups of atlas labels. Each entry of `rois` may be:
+  #   • an alias        — "Broca", "Wernicke", "Hippocampus-lh"
+  #   • an atlas label  — "superiortemporal-lh", "Left-Hippocampus"
+  #   • an explicit map — {MyROI: [label_a, label_b]}
+  # `mne_rt.list_rois(atlas=..., subjects_dir=...)` lists what is available.
+  #
+  # Surface atlases ("aparc", "aparc.a2009s", "HCPMMP1") reach cortex only.
+  # For subcortical ROIs use a volume source space — RTStream(source_space=
+  # "volume") — with the volumetric "aparc+aseg", which carries cortical
+  # parcels *and* subcortical structures.
+  #
+  # The deprecated keys `brain_label`, `brain_label_1` and `brain_label_2` are
+  # still honoured (with a DeprecationWarning) and map onto `rois`.
+
   source_power:
-    # Spectral power within a cortical parcel (FreeSurfer atlas label).
+    # Band power averaged over one or more source-space ROIs.
     frange: [8, 13]          # Hz
-    brain_label: "pericalcarine-lh"  # FreeSurfer label name
-    atlas: "aparc"           # "aparc" | "aparc.a2009s" | "HCPMMP1"
-    method: "dSPM"           # inverse method: "dSPM" | "MNE" | "eLORETA"
+    rois: ["pericalcarine-lh"]
+    atlas: null              # null -> the session's source_atlas
+                             # (RTStream(source_atlas=...)); or name one here
+    method: "dSPM"           # inverse: "dSPM" | "MNE" | "sLORETA" | "eLORETA" | "LCMV"
+    mri_resolution: true     # evaluate volume labels at MRI resolution
 
   # ── Source-space connectivity ──────────────────────────────────────────────
 
   source_connectivity:
-    # Functional connectivity between two cortical parcels.
+    # Functional connectivity between ROI pairs — within or across hemispheres,
+    # cortical or subcortical.
     frange: [8, 13]          # Hz
-    brain_label_1: "transversetemporal-lh"
-    brain_label_2: "transversetemporal-rh"
-    atlas: "aparc"
-    method: "coh"            # see sensor_connectivity.method for all options
+    rois: ["transversetemporal-lh", "transversetemporal-rh"]
+    pairs:                   # omit when exactly two ROIs are configured
+      - ["transversetemporal-lh", "transversetemporal-rh"]
+    atlas: null              # null -> the session's source_atlas
+    method: "coh"            # connectivity metric; see sensor_connectivity.method
+    inverse_method: "dSPM"   # how to get to source space; "LCMV" for a volume src
     mode: "cwt_morlet"       # "multitaper" | "cwt_morlet"
     n_cycles: 5              # see sensor_connectivity.n_cycles
+    n_freqs: 6               # points across frange for the wavelet grid
+    signed: false            # true keeps the sign (which ROI leads); false takes
+                             # the magnitude, usually what a reward signal wants
+    mri_resolution: true
 
   # ── Source-space graph ─────────────────────────────────────────────────────
 
   source_graph:
-    # Graph-theoretic connectivity between two cortical parcels.
+    # Graph-theoretic connectivity: learns a graph over the ROIs and reports
+    # the edge weight between the two named in `pair`.
     frange: [8, 13]          # Hz
-    brain_label_1: "transversetemporal-lh"
-    brain_label_2: "transversetemporal-rh"
-    atlas: "aparc"
+    rois: ["transversetemporal-lh", "transversetemporal-rh"]
+    pair: ["transversetemporal-lh", "transversetemporal-rh"]
+    atlas: null              # null -> the session's source_atlas
+    inverse_method: "dSPM"
     dist_type: "sqeuclidean"
     alpha: 1
     beta: 1
+    mri_resolution: true
 
   # ── Decoding ────────────────────────────────────────────────────────────────
 

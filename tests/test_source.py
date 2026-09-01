@@ -106,7 +106,7 @@ def fake_atlas(monkeypatch):
     ]
     import mne_rt.source as source
 
-    monkeypatch.setattr(source, "list_rois", lambda **kw: labels)
+    monkeypatch.setattr(source, "_atlas_label_names", lambda **kw: labels)
     return labels
 
 
@@ -150,7 +150,7 @@ def test_resolve_rois_duplicate_names_rejected(fake_atlas):
 def test_resolve_rois_surface_kind(monkeypatch):
     import mne_rt.source as source
 
-    monkeypatch.setattr(source, "list_rois", lambda **kw: ["parsopercularis-lh"])
+    monkeypatch.setattr(source, "_atlas_label_names", lambda **kw: ["parsopercularis-lh"])
     (roi,) = resolve_rois(["parsopercularis-lh"], atlas="aparc", subjects_dir="/x")
     assert roi.kind == "surface"
 
@@ -184,7 +184,7 @@ def test_free_orientation_refuses_the_kernel_path():
     src = _FakeSrc([np.arange(6)])
     model = SourceModel(src=src, atlas="aparc+aseg", filters=_fake_filters(6, 4, free_ori=True))
     assert model.supports_kernel is False
-    with pytest.raises(RuntimeError, match="fixed"):
+    with pytest.raises(RuntimeError, match="Free-orientation"):
         model.source_operator()
 
 
@@ -254,7 +254,31 @@ def test_apply_uses_kernel_when_given():
     )
     kernel = np.array([[1.0, 0.0], [0.0, 1.0]])
     data = np.arange(8, dtype=float).reshape(2, 4)
-    np.testing.assert_allclose(model.apply(data, kernel=kernel), data)
+    picks = np.array([0, 1])
+    np.testing.assert_allclose(model.apply(data, kernel=kernel, ch_picks=picks), data)
+
+
+def test_apply_with_kernel_requires_ch_picks():
+    model = SourceModel(
+        src=_FakeSrc([np.arange(4)]), atlas="aparc+aseg", filters=_fake_filters(4, 2)
+    )
+    with pytest.raises(ValueError, match="ch_picks"):
+        model.apply(np.zeros((2, 4)), kernel=np.eye(2))
+
+
+def test_channel_picks_reorders_to_operator_order():
+    filters = _fake_filters(4, 2)
+    filters["ch_names"] = ["B", "A"]
+    model = SourceModel(src=_FakeSrc([np.arange(4)]), atlas="aparc+aseg", filters=filters)
+    np.testing.assert_array_equal(model.channel_picks(["A", "B", "C"]), [1, 0])
+
+
+def test_channel_picks_reports_a_missing_channel():
+    filters = _fake_filters(4, 2)
+    filters["ch_names"] = ["A", "Z"]
+    model = SourceModel(src=_FakeSrc([np.arange(4)]), atlas="aparc+aseg", filters=filters)
+    with pytest.raises(ValueError, match="Z"):
+        model.channel_picks(["A", "B"])
 
 
 def test_apply_without_kernel_or_label_operator_raises():
@@ -407,7 +431,8 @@ def test_kernel_matches_full_mne_route(fsaverage_volume_model):
     )
     window = raw.get_data()[:, :250]
 
-    fast = model.apply(window, kernel=model.roi_kernel(rois))
+    picks = model.channel_picks(raw.ch_names)
+    fast = model.apply(window, kernel=model.roi_kernel(rois), ch_picks=picks)
     slow = model.apply(window, label_operator=model.label_operator(rois), info=raw.info)
     assert fast.shape == (3, 250)
     denom = max(np.max(np.abs(slow)), 1e-30)
@@ -471,7 +496,9 @@ def test_compute_inv_operator_surface_unchanged(baseline_raw, fs_subjects_dir):
 
     from mne_rt.tools import _compute_inv_operator
 
-    inv, fwd, noise_cov, src = _compute_inv_operator(baseline_raw, subjects_fs_dir=fs_subjects_dir)
+    inv, fwd, noise_cov, src, _ = _compute_inv_operator(
+        baseline_raw, subjects_fs_dir=fs_subjects_dir
+    )
     assert isinstance(inv, InverseOperator)
     assert src.kind == "surface"
     assert fwd["nsource"] == 20484  # fsaverage ico-5, both hemispheres
@@ -486,7 +513,7 @@ def test_lcmv_round_trip_on_a_volume_source_space(baseline_raw, fs_subjects_dir)
 
     from mne_rt.tools import _compute_inv_operator
 
-    _, fwd, noise_cov, _ = _compute_inv_operator(
+    _, fwd, noise_cov, _, _ = _compute_inv_operator(
         baseline_raw,
         subjects_fs_dir=fs_subjects_dir,
         src_type="volume",
@@ -519,7 +546,7 @@ def test_lcmv_round_trip_on_a_volume_source_space(baseline_raw, fs_subjects_dir)
 def test_compute_inv_operator_volume(baseline_raw, fs_subjects_dir):
     from mne_rt.tools import _compute_inv_operator
 
-    inv, fwd, _, src = _compute_inv_operator(
+    inv, fwd, _, src, _ = _compute_inv_operator(
         baseline_raw, subjects_fs_dir=fs_subjects_dir, src_type="volume", make_inverse=False
     )
     assert inv is None  # beamformer-only session
@@ -532,10 +559,10 @@ def test_volume_labels_restriction_shrinks_the_source_space(baseline_raw, fs_sub
     """The performance lever: build the grid from the ROIs, not the whole brain."""
     from mne_rt.tools import _compute_inv_operator
 
-    _, whole, _, _ = _compute_inv_operator(
+    _, whole, _, _, _ = _compute_inv_operator(
         baseline_raw, subjects_fs_dir=fs_subjects_dir, src_type="volume", make_inverse=False
     )
-    _, restricted, _, _ = _compute_inv_operator(
+    _, restricted, _, _, _ = _compute_inv_operator(
         baseline_raw,
         subjects_fs_dir=fs_subjects_dir,
         src_type="volume",
@@ -556,7 +583,7 @@ def test_volume_inverse_forces_free_orientation(baseline_raw, fs_subjects_dir):
     """loose=0.2 is illegal without a cortical surface; it must be coerced."""
     from mne_rt.tools import _compute_inv_operator
 
-    inv, _, _, _ = _compute_inv_operator(
+    inv, _, _, _, _ = _compute_inv_operator(
         baseline_raw,
         subjects_fs_dir=fs_subjects_dir,
         src_type="volume",
@@ -572,3 +599,401 @@ def test_compute_inv_operator_rejects_bad_src_type(baseline_raw):
 
     with pytest.raises(ValueError, match="src_type"):
         _compute_inv_operator(baseline_raw, src_type="mixed")
+
+
+# ===================================================================
+# Source modalities on ROIs (the configurations that used to be impossible)
+# ===================================================================
+
+
+def _modality_obj(tmp_path, params, **attrs):
+    """A minimal ModalityMixin carrying just what the source preps read."""
+    import mne
+
+    from mne_rt.modalities import ModalityMixin
+
+    class _Fake(ModalityMixin):
+        pass
+
+    obj = _Fake()
+    obj.params = params
+    obj.winsize = 2.0
+    obj._sfreq = 250.0
+    obj.subject_fs_id = "fsaverage"
+    obj.subjects_fs_dir = None
+    obj.rec_info = mne.create_info(["a", "b"], 250.0, "eeg")
+    for key, value in attrs.items():
+        setattr(obj, key, value)
+    return obj
+
+
+class _StubModel:
+    """Stands in for SourceModel so prep logic can be tested without anatomy."""
+
+    def __init__(self, supports_kernel=True, n_roi=3):
+        self.supports_kernel = supports_kernel
+        self._n_roi = n_roi
+
+    def roi_kernel(self, rois, mri_resolution=True):
+        return np.eye(len(rois), 2)
+
+    def label_operator(self, rois, mri_resolution=True):
+        return np.eye(len(rois), 4)
+
+    def channel_picks(self, ch_names):
+        return np.arange(len(ch_names))
+
+    def __repr__(self):
+        return "<StubModel>"
+
+
+@pytest.fixture()
+def stub_source(monkeypatch):
+    """Patch out SourceModel construction and ROI resolution."""
+    import mne_rt.modalities as modalities
+
+    model = _StubModel()
+    monkeypatch.setattr(modalities.ModalityMixin, "_get_source_model", lambda self, **kw: model)
+    monkeypatch.setattr(
+        modalities,
+        "resolve_rois",
+        lambda names, **kw: [
+            ROI(name=(n if isinstance(n, str) else next(iter(n))), members=("x",), kind="volume")
+            for n in names
+        ],
+    )
+    return model
+
+
+def test_source_connectivity_accepts_two_left_hemisphere_rois(tmp_path, stub_source):
+    """Broca-Wernicke: both -lh. The old prep rejected this outright."""
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["Broca", "Wernicke"],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "LCMV",
+        },
+    )
+    prep = obj._source_connectivity_prep()
+    np.testing.assert_array_equal(prep["indices"][0], [0])
+    np.testing.assert_array_equal(prep["indices"][1], [1])
+
+
+def test_source_connectivity_multiple_pairs(tmp_path, stub_source):
+    """Broca-Wernicke and Broca-hippocampus in one modality."""
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["Broca", "Wernicke", "Hippocampus-lh"],
+            "pairs": [["Broca", "Wernicke"], ["Broca", "Hippocampus-lh"]],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "imcoh",
+            "mode": "cwt_morlet",
+            "inverse_method": "LCMV",
+        },
+    )
+    prep = obj._source_connectivity_prep()
+    np.testing.assert_array_equal(prep["indices"][0], [0, 0])
+    np.testing.assert_array_equal(prep["indices"][1], [1, 2])
+    assert prep["method"] == "cohy" and prep["take_imag"] is True
+
+
+def test_source_connectivity_requires_pairs_beyond_two_rois(tmp_path, stub_source):
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["A", "B", "C"],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "LCMV",
+        },
+    )
+    with pytest.raises(ValueError, match="pairs"):
+        obj._source_connectivity_prep()
+
+
+def test_source_connectivity_unknown_pair_member(tmp_path, stub_source):
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["A", "B"],
+            "pairs": [["A", "Nope"]],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "LCMV",
+        },
+    )
+    with pytest.raises(ValueError, match="Nope"):
+        obj._source_connectivity_prep()
+
+
+def test_source_connectivity_rejects_bad_inverse_method(tmp_path, stub_source):
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["A", "B"],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "MAGIC",
+        },
+    )
+    with pytest.raises(ValueError, match="inverse_method"):
+        obj._source_connectivity_prep()
+
+
+def test_phase_metric_refused_on_a_magnitude_estimate(tmp_path, monkeypatch):
+    """imcoh on a free-orientation estimate is meaningless — refuse it."""
+    import mne_rt.modalities as modalities
+
+    model = _StubModel(supports_kernel=False)
+    monkeypatch.setattr(modalities.ModalityMixin, "_get_source_model", lambda self, **kw: model)
+    monkeypatch.setattr(
+        modalities,
+        "resolve_rois",
+        lambda names, **kw: [ROI(name=n, members=("x",), kind="volume") for n in names],
+    )
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["A", "B"],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "imcoh",
+            "mode": "cwt_morlet",
+            "inverse_method": "dSPM",
+        },
+    )
+    with pytest.raises(ValueError, match="phase"):
+        with pytest.warns(RuntimeWarning):
+            obj._source_connectivity_prep()
+
+
+def test_legacy_brain_labels_still_work(tmp_path, stub_source):
+    """Old configs keep running, with a DeprecationWarning."""
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "brain_label_1": "transversetemporal-lh",
+            "brain_label_2": "transversetemporal-rh",
+            "atlas": "aparc",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "dSPM",
+        },
+    )
+    with pytest.deprecated_call():
+        prep = obj._source_connectivity_prep()
+    np.testing.assert_array_equal(prep["indices"][0], [0])
+    np.testing.assert_array_equal(prep["indices"][1], [1])
+
+
+def test_missing_rois_raises_actionable_error(tmp_path, stub_source):
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "inverse_method": "LCMV",
+        },
+    )
+    with pytest.raises(ValueError, match="list_rois"):
+        obj._source_connectivity_prep()
+
+
+def test_source_model_is_shared_across_modalities(tmp_path, monkeypatch):
+    """Two bands of the same modality must not build two beamformers."""
+    import mne_rt.modalities as modalities
+
+    calls = []
+
+    def _fake_from_stream(rt, *, method, atlas):
+        calls.append((method, atlas))
+        return _StubModel()
+
+    monkeypatch.setattr(modalities.SourceModel, "from_stream", staticmethod(_fake_from_stream))
+    obj = _modality_obj(tmp_path, {})
+    for _ in range(3):
+        obj._get_source_model(method="LCMV", atlas="aparc+aseg")
+    obj._get_source_model(method="dSPM", atlas="aparc+aseg")
+    assert calls == [("LCMV", "aparc+aseg"), ("dSPM", "aparc+aseg")]
+
+
+def test_source_graph_needs_two_rois(tmp_path, stub_source):
+    obj = _modality_obj(
+        tmp_path,
+        {
+            "rois": ["Only"],
+            "atlas": "aparc+aseg",
+            "frange": [8, 13],
+            "dist_type": "sqeuclidean",
+            "alpha": 1,
+            "beta": 1,
+            "inverse_method": "LCMV",
+        },
+    )
+    with pytest.raises(ValueError, match="at least two"):
+        obj._source_graph_prep()
+
+
+@pytest.mark.slow
+def test_within_hemisphere_and_subcortical_connectivity_end_to_end(
+    fsaverage_volume_model,
+):
+    """The Aphasia_NF configuration: Broca-Wernicke and Broca-hippocampus."""
+    model, raw, subjects_dir = fsaverage_volume_model
+    rois = resolve_rois(
+        ["Broca", "Wernicke", "Hippocampus-lh"],
+        atlas="aparc+aseg",
+        subjects_dir=subjects_dir,
+    )
+    kernel = model.roi_kernel(rois)
+    tcs = kernel @ raw.get_data()[:, :500]
+    assert tcs.shape == (3, 500)
+    assert np.all(np.isfinite(tcs))
+    # each ROI must have its own signal, not a copy of a neighbour's
+    assert not np.allclose(tcs[0], tcs[1])
+    assert not np.allclose(tcs[0], tcs[2])
+
+
+@pytest.mark.slow
+def test_kernel_survives_a_bad_channel(baseline_raw, fs_subjects_dir):
+    """Regression: one bad channel used to break every window.
+
+    make_lcmv drops info["bads"], so the operator has fewer columns than the
+    recording has rows. apply_lcmv_raw selects channels internally; the cached
+    kernel must do the same, or `kernel @ data` fails on a shape mismatch.
+    """
+    import mne
+    from mne.beamformer import make_lcmv
+
+    from mne_rt.tools import _compute_inv_operator
+
+    raw = baseline_raw.copy()
+    raw.info["bads"] = [raw.ch_names[5]]
+
+    _, fwd, noise_cov, src, raw_fwd = _compute_inv_operator(
+        raw, subjects_fs_dir=fs_subjects_dir, src_type="volume", make_inverse=False
+    )
+    data_cov = mne.compute_raw_covariance(raw_fwd, method="empirical", verbose=False)
+    filters = make_lcmv(
+        raw_fwd.info,
+        fwd,
+        data_cov,
+        reg=0.05,
+        noise_cov=noise_cov,
+        pick_ori="max-power",
+        weight_norm="unit-noise-gain",
+        rank=None,
+        verbose=False,
+    )
+    model = SourceModel(
+        src=src,
+        atlas="aparc+aseg",
+        subject="fsaverage",
+        subjects_dir=fs_subjects_dir,
+        filters=filters,
+        info=raw_fwd.info,
+    )
+    assert len(model.channel_names) < len(raw.ch_names)  # the bad one was dropped
+
+    rois = resolve_rois(["Broca"], atlas="aparc+aseg", subjects_dir=fs_subjects_dir)
+    kernel = model.roi_kernel(rois)
+    picks = model.channel_picks(raw.ch_names)
+    # the full window, exactly as record_main hands it over
+    out = model.apply(raw.get_data()[:, :250], kernel=kernel, ch_picks=picks)
+    assert out.shape == (1, 250)
+    assert np.all(np.isfinite(out))
+
+
+@pytest.mark.slow
+def test_roi_restricted_volume_src_builds_a_usable_kernel(baseline_raw, fs_subjects_dir):
+    """Regression: volume_label=[...] returned one SourceSpaces per label.
+
+    The label operator reads a single interpolator/vertno, so a multi-space
+    source space produced rows of the wrong length (or silent zeros).
+    """
+    import mne
+    from mne.beamformer import make_lcmv
+
+    from mne_rt.tools import _compute_inv_operator
+
+    labels = ["ctx-lh-parsopercularis", "ctx-lh-parstriangularis", "Left-Hippocampus"]
+    _, fwd, noise_cov, src, raw_fwd = _compute_inv_operator(
+        baseline_raw,
+        subjects_fs_dir=fs_subjects_dir,
+        src_type="volume",
+        volume_labels=labels,
+        make_inverse=False,
+    )
+    assert len(src) == 1, "volume_label must yield a single source space"
+
+    data_cov = mne.compute_raw_covariance(raw_fwd, method="empirical", verbose=False)
+    filters = make_lcmv(
+        raw_fwd.info,
+        fwd,
+        data_cov,
+        reg=0.05,
+        noise_cov=noise_cov,
+        pick_ori="max-power",
+        weight_norm="unit-noise-gain",
+        rank=None,
+        verbose=False,
+    )
+    model = SourceModel(
+        src=src,
+        atlas="aparc+aseg",
+        subject="fsaverage",
+        subjects_dir=fs_subjects_dir,
+        filters=filters,
+        info=raw_fwd.info,
+    )
+    rois = resolve_rois(
+        ["Broca", "Hippocampus-lh"], atlas="aparc+aseg", subjects_dir=fs_subjects_dir
+    )
+    kernel = model.roi_kernel(rois, mri_resolution=False)
+    assert kernel.shape == (2, len(model.channel_names))
+    assert np.all(np.isfinite(kernel))
+    assert np.any(kernel[0] != 0) and np.any(kernel[1] != 0)
+
+
+def test_empty_label_does_not_dilute_a_multi_label_roi():
+    """A label with no source points must be dropped, not silently weighted.
+
+    Counting atlas voxels rather than source points would give the empty label
+    a share of the total and scale the surviving label's contribution below 1.
+    """
+    rows = {"A": np.array([0.5, 0.5, 0.0]), "Empty": np.zeros(3)}
+    roi = ROI(name="AB", members=("A", "Empty"), kind="volume")
+    from mne_rt.source import _row_supports
+
+    op = SourceModel._merge_rows([roi], rows, _row_supports(rows), 3)
+    np.testing.assert_allclose(op[0], rows["A"])
+    assert op[0].sum() == pytest.approx(1.0)
+
+
+def test_alias_inside_an_explicit_mapping(fake_atlas):
+    """Aliases must work wherever a label name does, including in mappings."""
+    (roi,) = resolve_rois(
+        [{"Language": ["Broca", "ctx-lh-superiortemporal"]}],
+        atlas="aparc+aseg",
+        subjects_dir="/x",
+    )
+    assert roi.members == (
+        "ctx-lh-parsopercularis",
+        "ctx-lh-parstriangularis",
+        "ctx-lh-superiortemporal",
+    )
