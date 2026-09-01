@@ -55,21 +55,11 @@ jobs:
           python-version: ${{ matrix.python }}
           activate-environment: true
       - run: uv pip install -e ".[dev,pyqt6]"
-      # The Qt visualisation tests are run in their own process. They are stable
-      # on their own (verified repeatedly, locally and in CI) but abort
-      # intermittently when they run at the end of the full suite, on every
-      # Python version — a long-standing crash in accumulated Qt widget
-      # destruction rather than in any single test. Isolating them removes the
-      # cross-test state without weakening what is asserted. See the note at
-      # the `qt_app` fixture for a way to reproduce the crash deliberately.
-      - run: pytest --cov=mne_rt --cov-report= --ignore=tests/test_viz_plots.py
+      - run: pytest --cov=mne_rt --cov-report=xml
         env:
           # coverage.py defaults to the sys.monitoring ("sysmon") tracer on
           # Python 3.12+. Force the legacy C tracer, which avoids a separate
-          # sysmon/C-extension interaction seen with numba jitclass code paths.
-          COVERAGE_CORE: ctrace
-      - run: pytest --cov=mne_rt --cov-append --cov-report=xml tests/test_viz_plots.py
-        env:
+          # sysmon interaction with numba jitclass code paths.
           COVERAGE_CORE: ctrace
       - uses: codecov/codecov-action@v5
         with:

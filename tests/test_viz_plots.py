@@ -20,6 +20,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import gc
+
 import numpy as np
 import pyqtgraph as pg
 import pytest
@@ -59,33 +61,44 @@ def qt_app():
     yield app
 
 
-# These tests are stable on their own — this file alone passes repeatedly — but
-# aborted intermittently in CI when run at the end of the full suite, on every
-# Python version. CI therefore runs this file in its own pytest process.
-#
-# To reproduce the crash deliberately, add:
+@pytest.fixture(autouse=True)
+def _destroy_widgets(qt_app):
+    """Tear each test's Qt widgets down deterministically.
+
+    ``widget.close()`` only hides a widget; the C++ object is destroyed later —
+    either when Python garbage-collects the wrapper or when the event loop runs
+    a deferred deletion. Leaving those two to race is what made this file abort
+    intermittently in CI (``Fatal Python error``, exit 134) on every Python
+    version: the event loop would process an event belonging to an object whose
+    wrapper had just been collected.
+
+    Verified against a deliberate reproduction (an autouse fixture calling only
+    ``processEvents()`` crashes 3/3 runs under
+    ``QT_QPA_PLATFORM=offscreen``): handing the widgets to Qt for deletion and
+    collecting before draining brings that to 0/3.
+    """
+    yield
+    from qtpy.QtWidgets import QApplication
+
+    for widget in QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    qt_app.processEvents()
+    gc.collect()
+    qt_app.processEvents()
+
+
+# Reproducing the abort this file's teardown fixture prevents: replace
+# `_destroy_widgets` with a fixture that only drains the event queue,
 #
 #     @pytest.fixture(autouse=True)
-#     def _drain_qt_events(qt_app):
+#     def _drain(qt_app):
 #         yield
 #         qt_app.processEvents()
 #
-# and run `QT_QPA_PLATFORM=offscreen pytest tests/test_viz_plots.py`: it
-# segfaults every run, part-way through TestEpochPlot. Selecting the same test
-# classes explicitly by node id passes, and no individual test crashes alone, so
-# the fault is in the ordering of accumulated Qt widget destruction rather than
-# in any one test. Do not commit that fixture — it turns an intermittent failure
-# into a certain one — but it is the handle to use when fixing the root cause.
-
-
-# NOTE: draining the Qt event queue after every test — an autouse fixture doing
-# `qt_app.processEvents()` — makes the intermittent CI abort in this file
-# reproduce *deterministically*, including locally under
-# QT_QPA_PLATFORM=offscreen. It segfaults partway through TestEpochPlot, and
-# neither of those tests crashes in isolation, so the fault is in the ordering
-# of accumulated widget destruction rather than in any single test. That is a
-# useful reproduction for fixing the underlying bug, but it must not be
-# committed as-is: it would turn a ~50 % flake into a guaranteed failure.
+# and `QT_QPA_PLATFORM=offscreen pytest tests/test_viz_plots.py` segfaults on
+# every run. Collecting garbage *before* draining, rather than after, is what
+# makes the difference — which is how the GC/event-loop race was identified.
 
 
 @pytest.fixture(scope="module")
