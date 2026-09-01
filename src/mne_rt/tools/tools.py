@@ -38,6 +38,7 @@ from mne import (
     make_forward_solution,
     read_labels_from_annot,
     setup_source_space,
+    setup_volume_source_space,
 )
 from mne.coreg import Coregistration
 from mne.datasets import fetch_fsaverage
@@ -48,6 +49,8 @@ from mne.time_frequency import psd_array_multitaper
 from mne.viz import create_3d_figure, get_brain_class, set_3d_backend
 from mne_icalabel import label_components
 from nibabel.freesurfer import read_morph_data
+
+from mne_rt._logging import logger
 
 
 def timed(func):
@@ -508,6 +511,12 @@ def _compute_inv_operator(
     depth=0.8,
     noise_cov_method="ad_hoc",
     reg=0.1,
+    *,
+    src_type="surface",
+    vol_pos=5.0,
+    vol_atlas="aparc+aseg",
+    volume_labels=None,
+    make_inverse=True,
 ):
     """
     Compute the inverse operator for EEG/MEG source localization.
@@ -530,13 +539,45 @@ def _compute_inv_operator(
     data_type : {'eeg', 'meg'}, default='eeg'
             Modality flag. Controls whether the forward solution is
             computed for EEG or MEG channels.
+    src_type : {'surface', 'volume'}, default='surface'
+            Source-space geometry. ``'surface'`` keeps the historical
+            cortical-surface behaviour unchanged. ``'volume'`` builds a
+            volumetric grid, which is what subcortical ROIs (hippocampus,
+            amygdala, thalamus) require — they do not exist on the cortical
+            surface at all.
+    vol_pos : float, default=5.0
+            Grid spacing in mm for ``src_type='volume'``.
+    vol_atlas : str, default='aparc+aseg'
+            Volumetric atlas stem under ``<subject>/mri/`` used when
+            ``volume_labels`` is given. ``aparc+aseg`` carries cortical
+            parcels *and* subcortical structures, so a single volume source
+            space covers both.
+    volume_labels : list of str | None, default=None
+            Restrict the volume source space to these atlas labels. Strongly
+            recommended: a whole-brain 5 mm grid is ~14 600 source points,
+            whereas the labels for a typical ROI set total a few hundred —
+            which is the difference between a real-time-capable pipeline and
+            one that is not.
+    make_inverse : bool, default=True
+            Build a minimum-norm inverse operator. Set ``False`` for a
+            beamformer-only session, where only ``fwd`` and the covariances
+            are needed.
 
     Returns
     -------
-    inverse_operator : dict
+    inverse_operator : dict | None
             The inverse operator object created with MNE-Python. This can
             be passed to functions such as ``apply_inverse`` or
             ``apply_inverse_epochs`` to estimate source time courses.
+            ``None`` when ``make_inverse=False``.
+    fwd : instance of Forward
+            The forward solution.
+    noise_cov : instance of Covariance
+            The noise covariance.
+    src : instance of SourceSpaces
+            The source space the forward model was built on. Returned because
+            it is needed to map atlas labels onto source estimates and cannot
+            otherwise be recovered from a beamformer.
 
     Notes
     -----
@@ -555,16 +596,47 @@ def _compute_inv_operator(
             * Estimates the head-MRI transform from the coregistration.
     """
 
+    if src_type not in ("surface", "volume"):
+        raise ValueError(f"`src_type` must be 'surface' or 'volume', got {src_type!r}.")
+
     if subject_fs_id == "fsaverage":
         fs_dir = fetch_fsaverage()
-        src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
         bem = op.join(fs_dir, "bem", "fsaverage-5120-5120-5120-bem-sol.fif")
         trans = "fsaverage"
+        if src_type == "surface":
+            src = op.join(fs_dir, "bem", "fsaverage-ico-5-src.fif")
+        elif volume_labels is None and float(vol_pos) == 5.0:
+            # fetch_fsaverage ships a prebuilt 5 mm whole-brain volume source
+            # space, so skip the (slow) interpolator construction entirely.
+            src = op.join(fs_dir, "bem", "fsaverage-vol-5-src.fif")
+        else:
+            src = setup_volume_source_space(
+                subject=subject_fs_id,
+                pos=vol_pos,
+                mri=f"{vol_atlas}.mgz",
+                bem=bem,
+                volume_label=volume_labels,
+                subjects_dir=op.dirname(fs_dir),
+                add_interpolator=True,
+                verbose=False,
+            )
 
     else:
-        src = setup_source_space(subject=subject_fs_id, subjects_dir=subjects_fs_dir)
+        if src_type == "surface":
+            src = setup_source_space(subject=subject_fs_id, subjects_dir=subjects_fs_dir)
         bem_model = make_bem_model(subject=subject_fs_id, subjects_dir=subjects_fs_dir)
         bem = make_bem_solution(bem_model)
+        if src_type == "volume":
+            src = setup_volume_source_space(
+                subject=subject_fs_id,
+                pos=vol_pos,
+                mri=f"{vol_atlas}.mgz",
+                bem=bem,
+                volume_label=volume_labels,
+                subjects_dir=subjects_fs_dir,
+                add_interpolator=True,
+                verbose=False,
+            )
         coreg = Coregistration(
             raw_baseline.info, subject=subject_fs_id, subjects_dir=subjects_fs_dir, fiducials="auto"
         )
@@ -609,9 +681,24 @@ def _compute_inv_operator(
             grad=reg,
             verbose=False,
         )
-    inverse_operator = make_inverse_operator(raw_fwd.info, fwd, noise_cov, loose=loose, depth=depth)
+    inverse_operator = None
+    if make_inverse:
+        if src_type == "volume":
+            # A volume source space has no cortical normal, so orientation
+            # cannot be constrained: MNE requires loose=1.0 and depth=None.
+            if loose != 1.0 or depth is not None:
+                logger.info(
+                    "Volume source space: forcing loose=1.0, depth=None "
+                    "(orientation cannot be constrained without a cortical surface)."
+                )
+            loose, depth = 1.0, None
+        inverse_operator = make_inverse_operator(
+            raw_fwd.info, fwd, noise_cov, loose=loose, depth=depth
+        )
 
-    return inverse_operator, fwd, noise_cov
+    # `src` may have been a path; return what the forward actually used, so
+    # callers can map atlas labels onto source estimates.
+    return inverse_operator, fwd, noise_cov, fwd["src"]
 
 
 def weight_to_degree_map(n_nodes):

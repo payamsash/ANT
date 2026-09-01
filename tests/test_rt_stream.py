@@ -598,3 +598,42 @@ class TestArrayStream:
             assert stream.n_new_samples == 20
         finally:
             stream.disconnect()
+
+
+# ------------------------------------------------------------------
+# Source-space configuration
+# ------------------------------------------------------------------
+
+
+def test_source_space_defaults_to_surface(tmp_path):
+    nf = _make_rt_stream(tmp_path)
+    assert nf.source_space == "surface"
+    assert nf.source_atlas == "aparc"  # a surface annotation
+    assert nf.src is None
+    assert nf.data_cov is None
+
+
+def test_volume_source_space_defaults_to_volumetric_atlas(tmp_path):
+    """'aparc' is an annot with no .mgz, so a volume session must not use it."""
+    nf = _make_rt_stream(tmp_path, source_space="volume")
+    assert nf.source_atlas == "aparc+aseg"
+
+
+def test_source_atlas_explicit_is_respected(tmp_path):
+    nf = _make_rt_stream(tmp_path, source_space="volume", source_atlas="aseg")
+    assert nf.source_atlas == "aseg"
+
+
+def test_invalid_source_space_raises(tmp_path):
+    with pytest.raises(ValueError, match="source_space"):
+        _make_rt_stream(tmp_path, source_space="mixed")
+
+
+@pytest.mark.parametrize("pos", [0, -1, "5"])
+def test_invalid_source_pos_raises(tmp_path, pos):
+    with pytest.raises(ValueError, match="source_pos"):
+        _make_rt_stream(tmp_path, source_pos=pos)
+
+
+def test_source_pos_stored(tmp_path):
+    assert _make_rt_stream(tmp_path, source_pos=3.0).source_pos == 3.0

@@ -25,6 +25,22 @@ Decoding
 
    mne_rt.RTDecode
 
+Source space
+------------
+
+Regions of interest and cached source-space operators.  A volume source space
+combined with the ``aparc+aseg`` atlas gives access to subcortical structures,
+which do not exist on the cortical surface.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+   mne_rt.SourceModel
+   mne_rt.ROI
+   mne_rt.resolve_rois
+   mne_rt.list_rois
+
 Visualisation
 -------------
 

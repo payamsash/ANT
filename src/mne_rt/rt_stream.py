@@ -39,8 +39,10 @@ import mne
 import numpy as np
 from mne import (
     Report,
+    compute_raw_covariance,
     write_cov,
     write_forward_solution,
+    write_source_spaces,
 )
 from mne.channels import get_builtin_montages, read_dig_captrak
 from mne.io import RawArray
@@ -405,6 +407,20 @@ class RTStream(ModalityMixin):
         FreeSurfer subjects directory.  Required when
         ``subject_fs_id != "fsaverage"`` or when ``show_brain_activation``
         is requested.
+    source_space : {"surface", "volume"}, default "surface"
+        Geometry of the source space built by
+        :meth:`compute_inv_operator`.  ``"surface"`` is the cortical-surface
+        model used historically.  ``"volume"`` builds a volumetric grid, which
+        is required for **subcortical** ROIs (hippocampus, amygdala,
+        thalamus) — these do not exist on the cortical surface at all.
+    source_atlas : str | None, default None
+        Atlas used to resolve ROI names.  ``None`` selects a sensible default
+        for ``source_space``: ``"aparc"`` (a surface annotation) for
+        ``"surface"``, and ``"aparc+aseg"`` (a volumetric ``.mgz``) for
+        ``"volume"``.  Note ``aparc+aseg`` contains cortical parcels *and*
+        subcortical structures, so one volume source space covers both.
+    source_pos : float, default 5.0
+        Grid spacing in mm for a volumetric source space.
     bandpass_freq : tuple(float, float) | None, default None
         Online band-pass filter applied to the LSL stream before feature
         extraction, as ``(l_freq, h_freq)`` in Hz.  ``None`` disables
@@ -492,6 +508,9 @@ class RTStream(ModalityMixin):
         mri: bool = False,
         subject_fs_id: str = "fsaverage",
         subjects_fs_dir: Optional[str] = None,
+        source_space: str = "surface",
+        source_atlas: Optional[str] = None,
+        source_pos: float = 5.0,
         bandpass_freq: Optional[tuple] = None,
         notch_freq: Union[float, list, None] = None,
         artifact_correction: Union[bool, str] = False,
@@ -518,6 +537,14 @@ class RTStream(ModalityMixin):
             raise ValueError("`subject_fs_id` must be a non-empty string.")
         if subjects_fs_dir is not None and not Path(subjects_fs_dir).is_dir():
             raise ValueError("`subjects_fs_dir` must be None or an existing directory.")
+        if source_space not in ("surface", "volume"):
+            raise ValueError(f"`source_space` must be 'surface' or 'volume', got {source_space!r}.")
+        if not isinstance(source_pos, (int, float)) or source_pos <= 0:
+            raise ValueError("`source_pos` must be a positive number (grid spacing in mm).")
+        if source_atlas is None:
+            # A volume source space needs a volumetric atlas; the surface
+            # default ("aparc") is an annot and has no .mgz counterpart.
+            source_atlas = "aparc+aseg" if source_space == "volume" else "aparc"
         if bandpass_freq is not None:
             if (
                 not (hasattr(bandpass_freq, "__len__") and len(bandpass_freq) == 2)
@@ -563,6 +590,11 @@ class RTStream(ModalityMixin):
         self.mri = mri
         self.subject_fs_id = subject_fs_id
         self.subjects_fs_dir = subjects_fs_dir
+        self.source_space = source_space
+        self.source_atlas = source_atlas
+        self.source_pos = source_pos
+        self.src = None
+        self.data_cov = None
         self.bandpass_freq = bandpass_freq
         self.notch_freq = notch_freq
         self.artifact_correction = artifact_correction
@@ -2411,6 +2443,12 @@ class RTStream(ModalityMixin):
         depth: float = 0.8,
         noise_cov_method: str = "ad_hoc",
         reg: float = 0.1,
+        *,
+        src_type: Optional[str] = None,
+        volume_labels: Optional[list] = None,
+        data_cov: Optional[Any] = None,
+        data_cov_method: str = "empirical",
+        make_inverse: bool = True,
     ) -> None:
         """Compute and save the inverse operator for source localisation.
 
@@ -2450,6 +2488,25 @@ class RTStream(ModalityMixin):
             ``noise_cov_method != "ad_hoc"``.  Set to ``0`` to skip.
             Helps numerical stability when the baseline recording is short
             relative to the number of channels.
+        src_type : {"surface", "volume"} | None, default None
+            Overrides the session's ``source_space`` for this call.
+        volume_labels : list of str | None, default None
+            Restrict a volumetric source space to these atlas labels.
+            Strongly recommended: a whole-brain 5 mm grid is ~14 600 source
+            points, while a typical ROI set totals a few hundred — the
+            difference between a real-time-capable pipeline and one that is
+            not.
+        data_cov : instance of Covariance | None, default None
+            Data covariance for beamforming.  ``None`` estimates it from the
+            baseline recording.  This is a *separate* quantity from
+            ``noise_cov``: :func:`mne.beamformer.make_lcmv` adapts its spatial
+            filter to the data covariance, and passing a noise covariance in
+            its place yields a filter that is not adaptive at all.
+        data_cov_method : str, default "empirical"
+            Estimator for the data covariance when it is computed here.
+        make_inverse : bool, default True
+            Build a minimum-norm inverse operator.  Set ``False`` for a
+            beamformer-only session.
 
         Raises
         ------
@@ -2462,7 +2519,8 @@ class RTStream(ModalityMixin):
         mne.compute_raw_covariance : Noise covariance estimation.
         """
         self._ensure_dirs()
-        self.inv, self.fwd, self.noise_cov = _compute_inv_operator(
+        src_type = src_type if src_type is not None else self.source_space
+        self.inv, self.fwd, self.noise_cov, self.src = _compute_inv_operator(
             self.raw_baseline,
             subject_fs_id=self.subject_fs_id,
             subjects_fs_dir=self.subjects_fs_dir,
@@ -2471,12 +2529,41 @@ class RTStream(ModalityMixin):
             depth=depth,
             noise_cov_method=noise_cov_method,
             reg=reg,
+            src_type=src_type,
+            vol_pos=self.source_pos,
+            vol_atlas=self.source_atlas if src_type == "volume" else "aparc+aseg",
+            volume_labels=volume_labels,
+            make_inverse=make_inverse,
         )
+
+        # Data covariance — what a beamformer actually adapts to.  Estimated on
+        # the same Raw the forward model was built from, so the projectors match.
+        if data_cov is not None:
+            self.data_cov = data_cov
+        else:
+            self.data_cov = compute_raw_covariance(
+                self.raw_baseline, method=data_cov_method, verbose=False
+            )
+
         inv_dir = self.subject_dir / "inv"
         _stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"
-        write_inverse_operator(
-            fname=inv_dir / f"{_stem}_inv.fif",
-            inv=self.inv,
+        if self.inv is not None:
+            write_inverse_operator(
+                fname=inv_dir / f"{_stem}_inv.fif",
+                inv=self.inv,
+                overwrite=True,
+            )
+        write_cov(
+            # must end in _cov.fif to satisfy MNE's naming check
+            fname=inv_dir / f"{_stem}_desc-data_cov.fif",
+            cov=self.data_cov,
+            overwrite=True,
+        )
+        # The source space is needed to map atlas labels onto source estimates
+        # and cannot be recovered from a beamformer, so persist it too.
+        write_source_spaces(
+            fname=inv_dir / f"{_stem}_src.fif",
+            src=self.src,
             overwrite=True,
         )
         write_forward_solution(
