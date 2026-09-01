@@ -52,6 +52,41 @@ def test_demo_custom(parser):
     assert args.no_nf is True
 
 
+def test_demo_decode_defaults(parser):
+    args = parser.parse_args(["demo-decode"])
+    assert args.command == "demo-decode"
+    assert args.subject == 1
+    assert args.n_test_epochs == 10
+    assert args.winsize == 2.0
+    assert args.n_components == 4
+    assert args.no_nf is False
+    assert args.no_save is False
+
+
+def test_demo_decode_custom(parser):
+    args = parser.parse_args(
+        [
+            "demo-decode",
+            "--subject",
+            "3",
+            "--n-test-epochs",
+            "5",
+            "--winsize",
+            "1.5",
+            "--n-components",
+            "6",
+            "--no-nf",
+            "--no-save",
+        ]
+    )
+    assert args.subject == 3
+    assert args.n_test_epochs == 5
+    assert args.winsize == 1.5
+    assert args.n_components == 6
+    assert args.no_nf is True
+    assert args.no_save is True
+
+
 def test_demo_protocol_defaults(parser):
     args = parser.parse_args(["demo"])
     assert args.protocol is None

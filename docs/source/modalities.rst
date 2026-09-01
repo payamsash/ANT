@@ -3,7 +3,7 @@
 Real-time Feature Modalities
 ============================
 
-MNE-RT implements 20 real-time feature modalities spanning sensor-space and
+MNE-RT implements 21 real-time feature modalities spanning sensor-space and
 source-space features, from simple band-power estimates to graph-theoretic
 functional connectivity measures.  Each modality can be used as a feedback
 signal, a monitoring metric, or an input to an offline analysis pipeline.
@@ -565,6 +565,22 @@ The feature value is the learned edge weight :math:`W_{ij}` between two specifie
 brain atlas parcels or source vertices.
 Anatomical accuracy is improved relative to sensor-space graph learning
 because volume conduction is partially mitigated by the inverse solution.
+
+----
+
+.. _modality-decode:
+
+Decode
+~~~~~~
+
+**Config key:** ``decode``
+
+Probability of ``decoder.classes_[class_index]`` from a fitted
+:class:`~mne_rt.RTDecode` classifier, attached via
+:meth:`~mne_rt.RTStream.set_decoder`. Unlike every other modality above, this
+one is not a pure function of a scalar config value — it queries a stateful,
+externally-fitted CSP/Scaler + classifier pipeline. See :doc:`decoding` for
+the full guide (fitting offline, attaching, validation, and caveats).
 
 ----
 

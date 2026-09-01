@@ -63,6 +63,7 @@ _LABELS = {
     "laterality": "Laterality",
     "hjorth": "Hjorth",
     "spectral_centroid": "Spectral Centroid",
+    "decode": "Decoder Probability",
 }
 
 _UNITS = {
@@ -81,6 +82,7 @@ _UNITS = {
     "laterality": "",
     "hjorth": "",
     "spectral_centroid": "Hz",
+    "decode": "",
 }
 
 _TIME_WINDOW_OPTIONS = [5, 10, 20, 30, 60]

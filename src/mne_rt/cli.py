@@ -7,9 +7,11 @@ Usage
     mne-rt --help
     mne-rt --version
     mne-rt info
-    mne-rt demo     [options]
-    mne-rt baseline [options]
-    mne-rt run      [options]
+    mne-rt demo        [options]
+    mne-rt demo-erp    [options]
+    mne-rt demo-decode [options]
+    mne-rt baseline    [options]
+    mne-rt run         [options]
 
 Install note
 ------------
@@ -61,6 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_info_parser(subparsers)
     _add_demo_parser(subparsers)
     _add_demo_erp_parser(subparsers)
+    _add_demo_decode_parser(subparsers)
     _add_baseline_parser(subparsers)
     _add_run_parser(subparsers)
 
@@ -280,6 +283,60 @@ def _add_demo_erp_parser(sub):
         "--no-tfr",
         action="store_true",
         help="Disable the TFRPlot (Morlet wavelet time-frequency heatmaps).",
+    )
+    return p
+
+
+def _add_demo_decode_parser(sub):
+    p = sub.add_parser(
+        "demo-decode",
+        help="Launch a real-time motor-imagery decoding demo (CSP + RTDecode).",
+        description=textwrap.dedent("""\
+            Load PhysioNet EEG Motor Movement/Imagery data, fit an RTDecode
+            (CSP + logistic regression) classifier on left- vs. right-hand
+            imagery epochs, then stream held-out epochs through
+            connect_to_array and classify them window-by-window in real
+            time as the "decode" NF modality.  Downloads ~15 MB of PhysioNet
+            data on first run.
+        """),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
+        "--subject",
+        type=int,
+        default=1,
+        metavar="N",
+        help="PhysioNet EEGBCI subject number (default: 1).",
+    )
+    p.add_argument(
+        "--n-test-epochs",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Held-out epochs per class streamed live for the real-time demo (default: 10).",
+    )
+    p.add_argument(
+        "--winsize",
+        type=float,
+        default=2.0,
+        help="Decode window length in seconds; must match the CSP fit window (default: 2.0).",
+    )
+    p.add_argument(
+        "--n-components",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of CSP spatial filters (default: 4).",
+    )
+    p.add_argument(
+        "--no-nf",
+        action="store_true",
+        help="Disable the scrolling real-time NF signal plot (NFPlot).",
+    )
+    p.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Skip saving session data at the end of the demo.",
     )
     return p
 
@@ -977,6 +1034,129 @@ def _cmd_demo_erp(args) -> None:
         print("\nDone.")
 
 
+def _cmd_demo_decode(args) -> None:
+    """Fit RTDecode (CSP) on PhysioNet motor imagery, then decode live via connect_to_array."""
+    import tempfile
+    from pathlib import Path
+
+    import mne
+    import numpy as np
+    from sklearn.model_selection import ShuffleSplit, cross_val_score
+
+    from mne_rt import RTDecode, RTStream
+
+    mne.set_log_level("WARNING")
+
+    print(f"MNE-RT Decoding Demo - loading PhysioNet subject {args.subject} ...")
+    runs = [6, 10, 14]
+    files = mne.datasets.eegbci.load_data(args.subject, runs, update_path=True, verbose=False)
+    raws = [mne.io.read_raw_edf(f, preload=True, verbose=False) for f in files]
+    raw = mne.concatenate_raws(raws)
+    mne.datasets.eegbci.standardize(raw)
+    raw.filter(l_freq=1.0, h_freq=40.0, verbose=False)
+
+    events, event_id = mne.events_from_annotations(raw, verbose=False)
+    tmin = 1.0
+    tmax = tmin + args.winsize
+    epochs = mne.Epochs(
+        raw,
+        events,
+        event_id={"left": event_id["T1"], "right": event_id["T2"]},
+        tmin=tmin,
+        tmax=tmax,
+        baseline=None,
+        preload=True,
+        verbose=False,
+    )
+    print(f"Epochs: {len(epochs)}  |  left={len(epochs['left'])}  right={len(epochs['right'])}")
+
+    # Hold out `--n-test-epochs` per class for the live streaming demo below;
+    # everything else is used to fit and cross-validate the decoder.
+    n_test = args.n_test_epochs
+    train_idx, test_idx = [], []
+    for label in ("left", "right"):
+        idx = np.where(epochs.events[:, 2] == epochs.event_id[label])[0]
+        test_idx.extend(idx[:n_test])
+        train_idx.extend(idx[n_test:])
+    epochs_train = epochs[sorted(train_idx)]
+    epochs_test = epochs[sorted(test_idx)]
+
+    X_train = epochs_train.get_data()
+    y_train = epochs_train.events[:, 2]
+    y_train = np.where(y_train == epochs.event_id["left"], "left", "right")
+
+    decoder = RTDecode(info=epochs.info, spatial_filter="csp", n_components=args.n_components)
+
+    print("Cross-validating CSP + logistic regression ...")
+    cv = ShuffleSplit(n_splits=5, test_size=0.2, random_state=0)
+    scores = cross_val_score(decoder.pipeline, X_train, y_train, cv=cv, n_jobs=1)
+    print(f"  Cross-validated accuracy: {scores.mean():.2f} +/- {scores.std():.2f}")
+
+    decoder.fit(X_train, y_train, verbose=False)
+
+    # Concatenate held-out test epochs, in order, into one continuous array
+    # so the true left/right timeline is known exactly for the live demo.
+    test_data = epochs_test.get_data()
+    test_labels = np.where(epochs_test.events[:, 2] == epochs.event_id["left"], "left", "right")
+    stream_data = np.concatenate(list(test_data), axis=1)
+    n_samples_per_epoch = test_data.shape[2]
+
+    tmp = Path(tempfile.mkdtemp(prefix="mne_rt_demo_decode_"))
+
+    nf = RTStream(
+        subject_id="decode-demo",
+        session="01",
+        subjects_dir=str(tmp),
+        montage=None,
+        data_type="eeg",
+        verbose=args.verbose,
+    )
+    nf.connect_to_array(stream_data, epochs.info, chunk_size=16, n_repeat=1)
+    nf.set_decoder(decoder)
+
+    duration = stream_data.shape[1] / epochs.info["sfreq"]
+    nf.record_main(
+        duration=duration,
+        modality=["decode"],
+        winsize=args.winsize,
+        show_nf_signal=not args.no_nf,
+        show_raw_signal=False,
+        show_topo=False,
+        save_raw=not args.no_save,
+        verbose=args.verbose,
+    )
+
+    proba = np.asarray(nf.nf_data.get("decode", []))
+    hop_s = args.winsize * 0.5
+    sfreq = epochs.info["sfreq"]
+    print(f"\nLive decode windows: {len(proba)}")
+    n_correct = 0
+    for i, label in enumerate(test_labels):
+        t0 = i * n_samples_per_epoch / sfreq
+        t1 = t0 + n_samples_per_epoch / sfreq
+        w0, w1 = int(t0 / hop_s), int(t1 / hop_s)
+        seg = proba[w0:w1]
+        if seg.size == 0:
+            continue
+        mean_p_right = seg.mean()
+        predicted = "right" if mean_p_right >= 0.5 else "left"
+        n_correct += predicted == label
+        print(
+            f"  segment {i:2d} | true={label:<5s} | mean P(right)={mean_p_right:.2f} "
+            f"| predicted={predicted:<5s} {'OK' if predicted == label else 'X'}"
+        )
+    n_segments = len(test_labels)
+    if n_segments:
+        print(
+            f"\nSegment-level accuracy: {n_correct}/{n_segments} ({100 * n_correct / n_segments:.0f}%)"
+        )
+
+    if not args.no_save:
+        saved = nf.save()
+        for kind, path in saved.items():
+            print(f"  [{kind}] -> {path}")
+
+
 def _cmd_baseline(args) -> None:
     """Record a baseline session."""
     from mne_rt import RTStream, set_log_level
@@ -1255,6 +1435,7 @@ def main(argv=None) -> None:
         "info": _cmd_info,
         "demo": _cmd_demo,
         "demo-erp": _cmd_demo_erp,
+        "demo-decode": _cmd_demo_decode,
         "baseline": _cmd_baseline,
         "run": _cmd_run,
     }

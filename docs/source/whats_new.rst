@@ -8,7 +8,7 @@ What's new
 Version 1.1.0
 --------------
 
-*Unreleased*
+*2026-07-29*
 
 New features
 ^^^^^^^^^^^^
@@ -37,6 +37,13 @@ New features
   :meth:`~mne_rt.RTStream.record_main` pipeline with no LSL networking or
   recorded file required — useful for offline analysis, unit tests, and
   demos. Backed by the new :class:`~mne_rt.ArrayStream`.
+- New :class:`~mne_rt.RTDecode` wraps an :mod:`mne.decoding`
+  (:class:`~mne.decoding.CSP` or :class:`~mne.decoding.Scaler` +
+  :class:`~mne.decoding.Vectorizer`) + scikit-learn classifier pipeline for
+  real-time single-trial decoding. Fit offline on labelled calibration
+  epochs, then attach with :meth:`~mne_rt.RTStream.set_decoder` and query
+  once per window as the new ``"decode"`` NF modality, alongside any other
+  modality in :meth:`~mne_rt.RTStream.record_main`.
 
 Bug fixes
 ^^^^^^^^^
