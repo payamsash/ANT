@@ -31,6 +31,31 @@ New features
   up, so it never mixes native units and then jumps by orders of magnitude when
   normalisation engages.
 
+- **Source-space connectivity between arbitrary ROI pairs.**
+  ``source_connectivity`` previously *required* one left-hemisphere and one
+  right-hemisphere label and rejected anything else, so a within-hemisphere
+  pair — Broca ↔ Wernicke, say — was impossible, as was any pair involving a
+  subcortical structure. It now takes a list of ``rois`` and explicit
+  ``pairs``, in any combination of hemispheres and of cortical/subcortical
+  regions, and reports the mean across pairs (``signed: true`` keeps the
+  lead/lag sign instead of the magnitude).
+- All three source modalities (``source_power``, ``source_connectivity``,
+  ``source_graph``) now run on :class:`~mne_rt.SourceModel`'s cached operator
+  and share one forward model and beamformer per ``(method, atlas)``, so
+  running the same measure in several frequency bands no longer rebuilds the
+  head model for each. ``source_graph`` gained ``pair`` for naming the edge to
+  report, and ``source_connectivity`` gained ``inverse_method`` — its
+  ``method`` is the *connectivity metric*, which was ambiguous before.
+- Minimum-norm inverses now also use the cached-kernel path, recovered by
+  pushing an identity "recording" through
+  :func:`~mne.minimum_norm.apply_inverse_raw` (public API, exact for ``MNE``
+  and to floating point for the noise-normalised methods). Surface source
+  modalities get *faster* as a result: measured per window, dSPM drops from
+  69 ms to 1.1 ms and MNE from 17 ms to 1.1 ms.
+- Phase-based connectivity metrics are now refused on a magnitude source
+  estimate. A free-orientation solution combines three orientations by norm,
+  discarding phase, so ``imcoh``/``plv``/``wpli`` computed on it are
+  meaningless; they raise instead of returning a plausible-looking number.
 - **Volume source spaces and subcortical ROIs.**
   :class:`~mne_rt.RTStream` accepts ``source_space="volume"``, building a
   volumetric grid instead of a cortical surface. This makes subcortical
@@ -114,6 +139,45 @@ Bug fixes
   no bound at all a minimum-version resolution selected pytest 2.0.0 (2011),
   which does not build. A new **Minimum deps** CI job installs the oldest
   versions each bound allows, so these cannot drift back into fiction.
+- **Bad channels broke every source-space window.** The cached source operator's
+  columns follow the forward model's channels, which exclude ``info["bads"]`` and
+  any channel without a digitised position, but it was applied to the full data
+  window. One bad channel — routine in real recordings — therefore raised a shape
+  error on every window, and a same-count reordering would have silently produced
+  wrong ROI time courses. Channels are now selected and reordered to match the
+  operator, as :func:`~mne.beamformer.apply_lcmv_raw` does internally.
+- **``compute_inv_operator(volume_labels=[...])`` produced an unusable source
+  space.** :func:`~mne.setup_volume_source_space` returns one source space *per
+  label* unless ``single_volume=True``, while label extraction reads a single
+  interpolator — so the ROI-restricted path documented as recommended yielded
+  rows of the wrong length, or silently all-zero ones.
+- A volume session with default modality parameters failed with
+  ``FileNotFoundError: Volumetric atlas 'aparc' not found``: the config shipped
+  ``atlas: "aparc"`` for every source modality, so the session's
+  ``source_atlas`` was never consulted. The config now defaults to ``null``,
+  meaning "use the session's".
+- The data covariance was estimated from ``raw_baseline`` rather than from the
+  recording the forward model was built from, so :func:`~mne.beamformer.make_lcmv`
+  received an average-reference-projected ``info`` alongside an unprojected
+  covariance.
+- Cached source models are now discarded when a new baseline is recorded;
+  previously a second :meth:`~mne_rt.RTStream.record_baseline` left
+  :meth:`~mne_rt.RTStream.record_main` using the beamformer built from the
+  *previous* baseline.
+- A multi-label ROI containing a label with no source points was silently
+  attenuated: label sizes were counted in atlas voxels, so an empty label still
+  took a share of the weighting. Sizes are now counted in source points, and the
+  "ROI contains no source points" warning fires as intended.
+- **EEG source models were built without an average reference.** MNE requires
+  an average reference for EEG source modelling —
+  :func:`~mne.minimum_norm.apply_inverse_raw` rejects data without one, and
+  :meth:`~mne_rt.RTStream.record_main` duly applies the projection to every
+  analysis window — but the forward model, the covariances and the beamformer
+  were all built from an ``info`` without it, so MNE warned on every baseline
+  that the covariance was adversely affected and the whitener did not match
+  the data it was applied to. The projection is now set before the covariances
+  are estimated. This changes source-space values slightly; it is a
+  correctness fix, not a cosmetic one.
 - **Source-space modalities could never run.** ``source_power``,
   ``source_connectivity`` and ``source_graph`` read the inverse operator from
   ``visit_{self.visit}-inv.fif``, but ``self.visit`` was never assigned and
