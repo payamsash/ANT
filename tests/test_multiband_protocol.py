@@ -19,6 +19,22 @@ def _down_proto(threshold=0.5):
     return ThresholdProtocol(threshold=threshold, direction="down")
 
 
+class _FixedProtocol:
+    """Returns a preset ``(crossed, magnitude)``, whatever it is given.
+
+    MultiBandProtocol's job is combining two magnitudes, not producing them.
+    Pinning the inputs keeps these tests independent of how a real protocol
+    derives a magnitude from its own history.
+    """
+
+    def __init__(self, crossed, magnitude):
+        self._result = (crossed, magnitude)
+        self.current_threshold = 0.0
+
+    def evaluate(self, value):
+        return self._result
+
+
 # ------------------------------------------------------------------
 # Defaults
 # ------------------------------------------------------------------
@@ -100,20 +116,18 @@ def test_or_logic_neither_crosses():
 
 
 def test_magnitude_geometric_mean():
-    up = ThresholdProtocol(threshold=0.0, direction="up")  # always crosses
-    down = ThresholdProtocol(threshold=2.0, direction="down")  # always crosses
-    proto = MultiBandProtocol(up, down, require_both=True)
-    # up_value=1.0 → mag_up=1.0; down_value=1.0 → mag_down=1.0
+    proto = MultiBandProtocol(
+        _FixedProtocol(True, 1.0), _FixedProtocol(True, 1.0), require_both=True
+    )
     crossed, mag = proto.evaluate(1.0, 1.0)
     assert crossed
     assert mag == pytest.approx(math.sqrt(1.0 * 1.0))
 
 
 def test_magnitude_geometric_mean_unequal():
-    up = ThresholdProtocol(threshold=0.0, direction="up")
-    down = ThresholdProtocol(threshold=2.0, direction="down")
-    proto = MultiBandProtocol(up, down, require_both=True)
-    # up_value=4.0 → mag_up=4.0; down_value=1.5 → mag_down=0.5
+    proto = MultiBandProtocol(
+        _FixedProtocol(True, 4.0), _FixedProtocol(True, 0.5), require_both=True
+    )
     crossed, mag = proto.evaluate(4.0, 1.5)
     assert crossed
     assert mag == pytest.approx(math.sqrt(4.0 * 0.5))
@@ -126,9 +140,9 @@ def test_magnitude_geometric_mean_unequal():
 
 def test_magnitude_arithmetic_fallback_up_zero():
     """up mag=0 (not crossed) but OR logic → fallback to arithmetic mean."""
-    up = ThresholdProtocol(threshold=0.5, direction="up")  # mag_up=0 for value=0.2
-    down = ThresholdProtocol(threshold=2.0, direction="down")  # mag_down > 0
-    proto = MultiBandProtocol(up, down, require_both=False)
+    proto = MultiBandProtocol(
+        _FixedProtocol(False, 0.0), _FixedProtocol(True, 1.0), require_both=False
+    )
     # Only down crosses: mag_up=0, mag_down=1.0
     crossed, mag = proto.evaluate(0.2, 1.0)
     assert crossed

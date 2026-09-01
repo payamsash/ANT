@@ -59,7 +59,7 @@ is found (via ``FREESURFER_HOME`` or ``--subjects-fs-dir``).
     $ mne-rt demo --no-topomap
     $ mne-rt demo --no-brain
     $ mne-rt demo --threshold 2e-13 --threshold-direction up
-    $ mne-rt demo --zscore-threshold 0.5 --zscore-warmup 20 --zscore-min-std 1e-15
+    $ mne-rt demo --zscore-threshold 0.5 --zscore-warmup 20
 
 Options:
 
@@ -136,11 +136,12 @@ Options:
        reward can be issued; passing this or ``--zscore-threshold`` alone
        enables :class:`~mne_rt.protocols.ZScoreProtocol`
    * - ``--zscore-min-std``
-     - 1e-6
-     - Floor on the running standard deviation, in the modality's raw
-       units.  **Must be well below your signal's real magnitude** or it
-       dominates and the threshold line ends up wildly off-scale -- e.g.
-       for ``sensor_power`` (~1e-13 range), try ``1e-15``
+     - *(none)*
+     - Absolute floor on the running standard deviation, in the modality's
+       raw units.  Rarely needed: z-scoring adapts to the feature's own
+       scale, and a signal with no spread gives a z-score of 0.  Set it only
+       for a deliberate absolute floor -- one *above* the real spread
+       replaces it and puts the threshold line wildly off-scale
 
 ``mne-rt demo-erp``
 --------------------
@@ -318,12 +319,11 @@ and live visualisation.
                  --modality sensor_power \
                  --threshold 2e-13 --threshold-direction up
 
-    # With an adaptive z-score boundary shown live on NFPlot
-    # (--zscore-min-std must be well below the modality's raw scale --
-    # sensor_power is ~1e-13, so the default 1e-6 floor would dominate)
+    # With an adaptive z-score boundary shown live on NFPlot.  No scale
+    # tuning needed -- z-scoring follows the feature's own magnitude.
     $ mne-rt run --subject sub01 --subjects-dir /data --duration 600 \
                  --modality sensor_power \
-                 --zscore-threshold 0.5 --zscore-warmup 20 --zscore-min-std 1e-15
+                 --zscore-threshold 0.5 --zscore-warmup 20
 
 Options (inherits all ``baseline`` flags above, plus):
 
@@ -379,11 +379,12 @@ Options (inherits all ``baseline`` flags above, plus):
        reward can be issued; passing this or ``--zscore-threshold`` alone
        enables :class:`~mne_rt.protocols.ZScoreProtocol`
    * - ``--zscore-min-std``
-     - 1e-6
-     - Floor on the running standard deviation, in the modality's raw
-       units.  **Must be well below your signal's real magnitude** or it
-       dominates and the threshold line ends up wildly off-scale -- e.g.
-       for ``sensor_power`` (~1e-13 range), try ``1e-15``
+     - *(none)*
+     - Absolute floor on the running standard deviation, in the modality's
+       raw units.  Rarely needed: z-scoring adapts to the feature's own
+       scale, and a signal with no spread gives a z-score of 0.  Set it only
+       for a deliberate absolute floor -- one *above* the real spread
+       replaces it and puts the threshold line wildly off-scale
    * - ``--no-raw``
      - —
      - Disable the scrolling raw M/EEG viewer (:class:`~mne_rt.viz.RawPlot`)

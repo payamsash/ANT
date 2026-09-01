@@ -15,7 +15,7 @@ from __future__ import annotations
 import collections
 from typing import Optional
 
-import numpy as np
+from mne_rt._stats import usable_std, welford_std, zscore
 
 
 class ZScoreProtocol:
@@ -43,9 +43,20 @@ class ZScoreProtocol:
         z-scoring.  Must be in ``[0, 1)``.  ``0.0`` disables smoothing.
         Applied as: ``smoothed = (1 - smoothing) * new + smoothing * prev``.
         Default is 0.0.
-    min_std : float
-        Floor applied to the running standard deviation to prevent
-        division by zero or near-zero blowup. Default is 1e-6.
+    min_std : float | None
+        Absolute floor applied to the running standard deviation, in the raw
+        units of the feature. Default is ``None``, which needs no floor: a
+        standard deviation carrying no information yields a z-score of ``0.0``
+        rather than being divided by an arbitrary constant.
+
+        Pass a float only if you deliberately want an absolute floor **and**
+        know your feature's magnitude. A floor above the feature's real spread
+        replaces it — ``1e-6`` against band power of ~1e-14 is what made
+        z-scores come out eight orders of magnitude too small before 1.2.0.
+
+        .. versionchanged:: 1.2.0
+            Default changed from ``1e-6`` to ``None``. An explicit float keeps
+            its previous meaning exactly.
     zscore_threshold : float
         Minimum absolute z-score required to issue a reward. Default is 0.5.
 
@@ -77,7 +88,7 @@ class ZScoreProtocol:
         direction: str = "up",
         warmup_windows: int = 20,
         smoothing: float = 0.0,
-        min_std: float = 1e-6,
+        min_std: Optional[float] = None,
         zscore_threshold: float = 0.5,
     ) -> None:
         if direction not in ("up", "down"):
@@ -86,15 +97,15 @@ class ZScoreProtocol:
             raise ValueError(f"warmup_windows must be >= 1, got {warmup_windows}")
         if not (0.0 <= smoothing < 1.0):
             raise ValueError(f"smoothing must be in [0, 1), got {smoothing}")
-        if min_std <= 0.0:
-            raise ValueError(f"min_std must be > 0, got {min_std}")
+        if min_std is not None and min_std <= 0.0:
+            raise ValueError(f"min_std must be > 0 or None, got {min_std}")
         if zscore_threshold < 0.0:
             raise ValueError(f"zscore_threshold must be >= 0, got {zscore_threshold}")
 
         self.direction: str = direction
         self.warmup_windows: int = warmup_windows
         self.smoothing: float = smoothing
-        self.min_std: float = min_std
+        self.min_std: Optional[float] = min_std
         self.zscore_threshold: float = zscore_threshold
 
         self._n_evaluated: int = 0
@@ -148,15 +159,9 @@ class ZScoreProtocol:
         delta2 = smoothed - self._welford_mean
         self._welford_m2 += delta * delta2
 
-        if self._n_evaluated < 2:
-            std = self.min_std
-        else:
-            std = max(
-                float(np.sqrt(self._welford_m2 / (self._n_evaluated - 1))),
-                self.min_std,
-            )
-
-        self._zscore = (smoothed - self._welford_mean) / std
+        self._zscore = zscore(
+            smoothed, self._welford_mean, self._current_std(), min_std=self.min_std
+        )
 
         if self._n_evaluated <= self.warmup_windows:
             return False, 0.0
@@ -202,18 +207,27 @@ class ZScoreProtocol:
         """
         return self._welford_mean
 
+    def _current_std(self) -> float:
+        """Baseline standard deviation, or ``0.0`` when it carries no information.
+
+        Single source of truth for :meth:`evaluate` and :attr:`std_`, which
+        previously each carried their own copy of this expression.
+        """
+        return usable_std(
+            welford_std(self._welford_m2, self._n_evaluated),
+            self._welford_mean,
+            min_std=self.min_std,
+        )
+
     @property
     def std_(self) -> float:
         """Current running baseline standard deviation.
 
-        Returns ``min_std`` before at least two evaluations.
+        ``0.0`` until at least two evaluations have been seen, or whenever the
+        signal has no usable spread — unless an explicit ``min_std`` was given,
+        which is then returned as the floor.
         """
-        if self._n_evaluated < 2:
-            return self.min_std
-        return max(
-            float(np.sqrt(self._welford_m2 / (self._n_evaluated - 1))),
-            self.min_std,
-        )
+        return self._current_std()
 
     @property
     def current_threshold(self) -> Optional[float]:

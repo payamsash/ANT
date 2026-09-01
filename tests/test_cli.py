@@ -384,9 +384,10 @@ def test_build_protocol_from_args_zscore(parser, capsys):
 
 
 def test_build_protocol_from_args_zscore_default_min_std(parser):
+    """No floor by default -- the z-score follows the feature's own scale."""
     args = parser.parse_args(["demo", "--zscore-threshold", "1.2"])
     protocol = _build_protocol_from_args(args)
-    assert protocol.min_std == 1e-6
+    assert protocol.min_std is None
 
 
 def test_build_protocol_from_args_threshold_inferred(parser, capsys):
