@@ -48,6 +48,26 @@ New features
 Bug fixes
 ^^^^^^^^^
 
+- **Corrected several dependency lower bounds that were never satisfiable.**
+  CI only ever installed the newest release of each dependency, so the minimum
+  versions declared in ``pyproject.toml`` had never been tested. Installing
+  them revealed four combinations that the metadata allowed but that fail on
+  contact:
+
+  * ``mne>=1.8`` → **1.9**: on 1.8, ``record_baseline()`` raises
+    ``KeyError: 'type'`` when saving the baseline recording.
+  * ``mne-connectivity>=0.7`` → **0.8**: ``spectral_connectivity_time`` gained
+    ``"cohy"`` (how imaginary coherence is computed) only in 0.8, and native
+    ``"imcoh"`` only in 0.9. On 0.7 both raise ``KeyError``.
+  * ``nibabel>=5.0`` → **5.2**: 5.0 and 5.1 call ``np.sctypes``, removed in
+    numpy 2.0, so importing mne-rt failed outright.
+  * ``scikit-learn>=1.3`` → **1.4.2**: earlier versions import
+    ``ComplexWarning`` from ``numpy.core.numeric``, also removed in numpy 2.0.
+
+  The ``dev`` extra's ``pytest``/``pytest-cov`` are now lower-bounded too; with
+  no bound at all a minimum-version resolution selected pytest 2.0.0 (2011),
+  which does not build. A new **Minimum deps** CI job installs the oldest
+  versions each bound allows, so these cannot drift back into fiction.
 - **Source-space modalities could never run.** ``source_power``,
   ``source_connectivity`` and ``source_graph`` read the inverse operator from
   ``visit_{self.visit}-inv.fif``, but ``self.visit`` was never assigned and

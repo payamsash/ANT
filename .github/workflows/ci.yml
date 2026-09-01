@@ -65,3 +65,31 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
         if: success() || failure()
+
+  # The matrix above always resolves the *newest* release of every dependency,
+  # so the lower bounds in pyproject.toml are never exercised and can silently
+  # drift into fiction. This job installs the oldest version each bound allows.
+  minimum:
+    name: Minimum deps
+    needs: style
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pyvista/setup-headless-display-action@v4
+        with:
+          qt: true
+          pyvista: false
+          wm: false
+      - uses: astral-sh/setup-uv@v8.3.1
+        with:
+          # oldest supported interpreter, to match the oldest dependencies
+          python-version: "3.11"
+          activate-environment: true
+      - run: uv pip install --resolution lowest-direct -e ".[dev,pyqt6]"
+      - run: uv pip list
+      - run: pytest
+        env:
+          COVERAGE_CORE: ctrace
