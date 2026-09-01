@@ -165,6 +165,36 @@ class ModalityMixin:
     # Shared helpers
     # ------------------------------------------------------------------
 
+    def _acquired_ch_names(self) -> list:
+        """Channels present in the array ``stream.get_data()`` returns.
+
+        This is **not** ``rec_info["ch_names"]``: ``get_data()`` defaults to
+        ``exclude="bads"``, so a channel marked bad — at connect time, or later
+        by :class:`~mne_rt.BadChannelDetector` during the baseline — is absent
+        from the array while still listed in the info.
+
+        Everything that indexes the acquired array by position, or wraps it in
+        a :class:`~mne.io.RawArray`, must use this list. Using
+        ``rec_info["ch_names"]`` instead shifts every position once a channel is
+        bad, which is what made :meth:`record_baseline` raise
+        ``len(data) does not match len(info["ch_names"])`` and made the
+        connectivity modalities silently compute on the wrong channel pairs.
+
+        Bads are deliberately left in ``rec_info``: the forward model and
+        beamformer exclude them by themselves, and
+        :class:`~mne_rt.tools.RTMaxwellFilter` needs them marked in order to
+        reconstruct them through the SSS expansion.
+        """
+        bads = set(self.rec_info["bads"])
+        names = [ch for ch in self.rec_info["ch_names"] if ch not in bads]
+        picks = getattr(self, "picks", None)
+        if picks is None or isinstance(picks, str):
+            # A channel-type string is resolved by the stream itself; the
+            # ordering it returns still follows rec_info.
+            return names
+        wanted = set(picks)
+        return [ch for ch in names if ch in wanted]
+
     def _get_source_model(self, *, method: str, atlas: str):
         """Return a :class:`~mne_rt.SourceModel`, building it at most once.
 
@@ -226,7 +256,7 @@ class ModalityMixin:
                 # The operator's columns follow the forward model's channels, which
                 # exclude bads and any channel without a digitised position, so the
                 # data must be selected/reordered to match.
-                "ch_picks": model.channel_picks(self.rec_info["ch_names"]),
+                "ch_picks": model.channel_picks(self._acquired_ch_names()),
                 "label_operator": None,
             }
 
@@ -371,7 +401,7 @@ class ModalityMixin:
         }
 
     def _sensor_connectivity_prep(self) -> dict:
-        ch_names = self.rec_info["ch_names"]
+        ch_names = self._acquired_ch_names()  # data excludes bads; rec_info does not
         chs = self.params["channels"]
         # `channels` is a list of [ch_A, ch_B] pairs; build mne-connectivity's
         # (seeds, targets) form.  The previous zip(chs[0], chs[1]) happened to
@@ -462,7 +492,7 @@ class ModalityMixin:
         }
 
     def _sensor_graph_prep(self) -> dict:
-        ch_names = self.rec_info["ch_names"]
+        ch_names = self._acquired_ch_names()  # data excludes bads; rec_info does not
         chs = self.params["channels"]
         indices = tuple(
             np.array([ch_names.index(ch1), ch_names.index(ch2)]) for ch1, ch2 in zip(chs[0], chs[1])
@@ -811,7 +841,7 @@ class ModalityMixin:
     # ------------------------------------------------------------------
 
     def _laterality_prep(self) -> dict:
-        ch_names = self.rec_info["ch_names"]
+        ch_names = self._acquired_ch_names()  # data excludes bads; rec_info does not
 
         def _is_left(name: str) -> bool:
             # 10-20 convention: trailing odd digit → left hemisphere
@@ -950,7 +980,7 @@ class ModalityMixin:
                 "laterality_erd_ers requires a completed baseline recording. "
                 "Call record_baseline() first."
             )
-        ch_names = self.rec_info["ch_names"]
+        ch_names = self._acquired_ch_names()  # data excludes bads; rec_info does not
 
         def _is_left(name):
             for i in range(len(name) - 1, -1, -1):
@@ -1180,7 +1210,7 @@ class ModalityMixin:
 
     def _connectivity_ratio_prep(self) -> dict:
         """Prep: build connectivity indices for numerator and denominator pairs."""
-        ch_names = self.rec_info["ch_names"]
+        ch_names = self._acquired_ch_names()  # data excludes bads; rec_info does not
 
         def _pair_to_indices(pair):
             a, b = pair[0], pair[1]

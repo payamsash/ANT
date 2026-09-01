@@ -621,6 +621,14 @@ class RTStream(ModalityMixin):
                 pass
             self._mock_player = None
 
+    def _acquired_info(self) -> Any:
+        """``rec_info`` restricted to :meth:`_acquired_ch_names`."""
+        names = self._acquired_ch_names()
+        if names == list(self.rec_info["ch_names"]):
+            return self.rec_info
+        keep = [self.rec_info["ch_names"].index(ch) for ch in names]
+        return mne.pick_info(self.rec_info, keep, verbose=False)
+
     def _finalize_stream(self, stream: Any) -> None:
         """Store the connected stream and expose its public methods on self."""
         self.stream = stream
@@ -912,7 +920,7 @@ class RTStream(ModalityMixin):
             time.sleep(winsize)
 
         data = np.concatenate(chunks, axis=1)
-        raw_baseline = RawArray(data, self.rec_info)
+        raw_baseline = RawArray(data, self._acquired_info())
 
         self._ensure_dirs()
         _stem = f"sub-{self.subject_id}_ses-{self.session}"
@@ -1235,9 +1243,10 @@ class RTStream(ModalityMixin):
         # Artifact correction setup
         ref_ch_idx: Optional[int] = None
         if self.artifact_correction == "lms":
-            ref_ch_idx = self.rec_info["ch_names"].index(ref_channel)
+            # indexes the acquired window, which excludes bads
+            ref_ch_idx = self._acquired_ch_names().index(ref_channel)
         elif self.artifact_correction == "orica":
-            self.run_orica(n_channels=len(self.rec_info["ch_names"]), forgetfac=0.99)
+            self.run_orica(n_channels=len(self._acquired_ch_names()), forgetfac=0.99)
         elif self.artifact_correction == "gedai":
             if not hasattr(self, "gedai") or self.gedai is None:
                 raise RuntimeError(
@@ -1407,9 +1416,9 @@ class RTStream(ModalityMixin):
 
         if show_raw_signal:
             raw_plot = RawPlot(
-                ch_names=self.rec_info["ch_names"],
+                ch_names=self._acquired_ch_names(),
                 sfreq=self._sfreq,
-                info=self.rec_info,
+                info=self._acquired_info(),
             )
             raw_plot.show()
 
@@ -2095,7 +2104,7 @@ class RTStream(ModalityMixin):
 
     def _prepare_raw_array(self, data: np.ndarray) -> RawArray:
         """Wrap data in a RawArray; set average EEG reference for EEG data."""
-        raw = RawArray(data, self.rec_info, verbose=False)
+        raw = RawArray(data, self._acquired_info(), verbose=False)
         if self.data_type == "eeg":
             raw.set_eeg_reference("average", projection=True)
         return raw
@@ -2301,7 +2310,7 @@ class RTStream(ModalityMixin):
         if not hasattr(self, "raw_baseline") or self.raw_baseline is None:
             raise RuntimeError("Run record_baseline() before calling fit_gedai().")
 
-        n_channels = len(self.rec_info["ch_names"])
+        n_channels = len(self._acquired_ch_names())
         self.gedai = GEDAIDenoiser(n_channels=n_channels, shrinkage=shrinkage)
 
         if use_leadfield and hasattr(self, "fwd") and self.fwd is not None:
