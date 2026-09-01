@@ -618,6 +618,30 @@ def _reward_visible(w, i):
 
 
 class TestNFPlot:
+    def test_instanced_modalities_render(self, qt_app):
+        """An instance inherits its base's scale, label and unit."""
+        from mne_rt.viz.nf_plot import NFPlot
+
+        w = NFPlot(
+            ["sensor_power@alpha", "sensor_power@theta"],
+            {"sensor_power": 1e-12},  # only the base has an entry
+            sfreq=30,
+        )
+        w.push([3.2e-13, 1.1e-13])  # must not KeyError on the missing keys
+        assert w._n == 2
+        assert w._buf[0, -1] != w._buf[1, -1]
+        labels = [pi.getAxis("left").labelText for pi in w._plots]
+        assert labels == ["Sensor Power (alpha)", "Sensor Power (theta)"]
+        w.close()
+
+    def test_modality_without_a_scale_entry_renders(self, qt_app):
+        """instantaneous_phase is a real modality that had no scales_dict entry."""
+        from mne_rt.viz.nf_plot import NFPlot
+
+        w = NFPlot(["instantaneous_phase"], {}, sfreq=30)
+        w.push([1.5])
+        w.close()
+
     def test_construct(self, qt_app):
         from mne_rt.viz.nf_plot import NFPlot
 

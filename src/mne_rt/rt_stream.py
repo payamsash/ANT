@@ -56,6 +56,7 @@ from mne_lsl.stream import StreamLSL as Stream
 from pyqtgraph.Qt import QtWidgets
 
 from mne_rt._logging import logger, set_log_level, verbose
+from mne_rt._naming import MODALITY_SEP, osc_address_name, parse_modality, split_modality
 from mne_rt.combiners import GeometricMeanCombiner, ZScoredNormCombiner
 from mne_rt.decoding import RTDecode
 from mne_rt.modalities import ModalityMixin
@@ -1028,6 +1029,13 @@ class RTStream(ModalityMixin):
             ``"connectivity_ratio"``,
             ``"source_power"``, ``"source_connectivity"``, ``"source_graph"``,
             ``"decode"`` (requires :meth:`set_decoder` beforehand).
+
+            A name may carry an **instance label** after an ``"@"`` —
+            ``"source_connectivity@theta"`` — so the same measure can run
+            several times over with different parameters (see
+            ``modality_params``).  The label distinguishes the instances
+            everywhere they appear: plot traces, protocol keys, combiner
+            feature names, OSC addresses, LSL channels and saved columns.
         picks : str | list of str | None, default None
             Channel selection passed to the LSL stream.  ``None`` uses all
             available channels.  Must be ``None`` for source-space modalities.
@@ -1040,6 +1048,18 @@ class RTStream(ModalityMixin):
             Per-modality parameter overrides.  Keys are modality names;
             values are dicts of ``{parameter: new_value}`` pairs that
             override the config-file defaults.
+
+            A key may name either a base modality or a specific instance.  A
+            base entry applies to every instance of it, and an instance's own
+            entry takes precedence — so shared settings are written once::
+
+                modality=["source_connectivity@theta",
+                          "source_connectivity@alpha"],
+                modality_params={
+                    "source_connectivity": {"method": "imcoh"},
+                    "source_connectivity@theta": {"frange": [4, 8]},
+                    "source_connectivity@alpha": {"frange": [8, 13]},
+                },
         show_raw_signal : bool, default True
             Show the :class:`~mne_rt.viz.RawPlot` scrolling raw M/EEG viewer.
         show_nf_signal : bool, default True
@@ -1098,7 +1118,11 @@ class RTStream(ModalityMixin):
             Pass a single Protocol instance (e.g.
             :class:`~mne_rt.protocols.ThresholdProtocol`) to apply it to the
             first modality, or a ``{modality_name: protocol}`` dict to
-            apply different protocols to different modalities.  On each
+            apply different protocols to different modalities.  Keys must
+            name active modalities exactly; where a modality runs as several
+            instances, each needs its own protocol *object*, since protocols
+            accumulate state and one shared between instances would be fed
+            several different values per window.  On each
             window the protocol's ``evaluate(value)`` method is called and
             ``(crossed, magnitude)`` is recorded.  Results are accessible via
             :attr:`reward_data` after the session.  When ``show_nf_signal=True``,
@@ -1264,25 +1288,74 @@ class RTStream(ModalityMixin):
                 )
 
         # Modality preparation
-        mods = [modality] if isinstance(modality, str) else list(modality)
+        #
+        # A name may carry an instance label ("source_connectivity@theta"), so the
+        # same measure can run several times over with different parameters.  The
+        # *base* drives config lookup and method dispatch; the *full name* keys
+        # every piece of per-instance state and every output channel.  A plain
+        # name is just an instance with an empty label, so nothing below changes
+        # behaviour for a session that does not use labels.
+        specs = [parse_modality(m) for m in ([modality] if isinstance(modality, str) else modality)]
+        mods = [s.name for s in specs]
+        _dupes = sorted({m for m in mods if mods.count(m) > 1})
+        if _dupes:
+            raise ValueError(
+                f"Modality name(s) {_dupes} listed more than once. Give each instance a "
+                f"distinct label — e.g. {_dupes[0] + MODALITY_SEP + 'alpha'!r} and "
+                f"{_dupes[0] + MODALITY_SEP + 'theta'!r} — so their values, smoothing, "
+                "z-score state and protocols stay separate."
+            )
         self._mods = mods
+        self._mod_specs = specs
+
+        # Validate protocol keys here, before the thread pool and the Qt windows
+        # are created: raising once those exist would leave orphaned widgets on
+        # screen and a live executor, since record_main has no teardown path.
+        if isinstance(protocol, dict):
+            _valid_keys = mods + ([combined_name] if combiner is not None else [])
+            for _key in protocol:
+                if _key in _valid_keys:
+                    continue
+                # Protocols carry state -- ZScoreProtocol's running mean and
+                # variance, StaircaseProtocol's step, PercentileProtocol's
+                # buffer.  Fanning one object across N instances would feed it
+                # N different values per window and corrupt all of it, so a
+                # base name that has instances is refused rather than expanded.
+                _insts = sorted({s.name for s in specs if s.is_instanced and s.base == _key})
+                if _insts:
+                    raise ValueError(
+                        f"Protocol key {_key!r} names a base modality with {len(_insts)} "
+                        f"active instance(s) ({', '.join(_insts)}). Protocols are stateful, "
+                        "so give each instance its own protocol object rather than sharing "
+                        "one between them."
+                    )
+                raise ValueError(
+                    f"Protocol key {_key!r} does not name an active modality. "
+                    f"Valid keys are {_valid_keys}."
+                )
 
         self.executor = ThreadPoolExecutor(max_workers=len(mods))
         self.mod_params_dict = {
-            mod: get_params(self.config_file, mod, self.modality_params) for mod in mods
+            s.name: get_params(self.config_file, s.base, self.modality_params, instance=s.name)
+            for s in specs
         }
         precomps: list[dict] = []
         nf_fns: list = []
-        for mod in mods:
-            self.params = self.mod_params_dict[mod]
-            fn = getattr(self, f"_{mod}", None)
+        for s in specs:
+            self.params = self.mod_params_dict[s.name]
+            fn = getattr(self, f"_{s.base}", None)
             if not callable(fn):
-                raise NotImplementedError(f"Modality '{mod}' is not implemented.")
-            if "source" in mod and picks is not None:
+                raise NotImplementedError(f"Modality '{s.base}' is not implemented.")
+            # Test the base, not the full name: "sensor_power@source" is a sensor
+            # modality whose label happens to read "source".
+            if "source" in s.base and picks is not None:
                 raise ValueError("'picks' must be None for source-space modalities.")
-            prep = getattr(self, f"_{mod}_prep", None)
+            prep = getattr(self, f"_{s.base}_prep", None)
             precomps.append(prep() if callable(prep) else {})
             nf_fns.append(fn)
+        # Leaving this pointing at the last instance's params would quietly hand
+        # them to anything that read it at window time.
+        self.params = None
 
         # ---- Visualization setup (main thread) ----
 
@@ -1306,7 +1379,15 @@ class RTStream(ModalityMixin):
             "spectral_centroid": 5.0,
             "scp": 50e-6,
             "decode": 1.0,
+            "instantaneous_phase": 3.2,  # radians, |phase| <= pi
+            "laterality_erd_ers": 50.0,
         }
+        # NFPlot indexes scales_dict with a bare [], so every *displayed* name
+        # needs an entry: an instance inherits its base modality's scale unless
+        # the caller gave it one of its own.
+        for s in specs:
+            if s.name not in scales_dict and s.base in scales_dict:
+                scales_dict[s.name] = scales_dict[s.base]
         # NFPlot looks every displayed modality up in scales_dict, so the
         # combined trace needs an entry of its own.
         if combiner is not None:
@@ -1328,9 +1409,15 @@ class RTStream(ModalityMixin):
             expected = getattr(combiner, "features", None)
             missing = [f for f in (expected or []) if f not in mods]
             if missing:
+                # A feature naming a base modality that is only present as
+                # instances is the likely mistake; say which ones it could mean.
+                hint = ""
+                _cands = sorted({s.name for s in specs if s.is_instanced and s.base in missing})
+                if _cands:
+                    hint = f" Did you mean {_cands}?"
                 raise ValueError(
                     f"{type(combiner).__name__} expects feature(s) {missing}, which are not "
-                    f"among the active modalities {mods}."
+                    f"among the active modalities {mods}.{hint}"
                 )
             if isinstance(combiner, ZScoredNormCombiner):
                 pass  # normalises each feature itself; nothing to advise
@@ -1366,6 +1453,31 @@ class RTStream(ModalityMixin):
         # The combined trace is a modality as far as the plot, the protocols, the
         # feedback outputs and the saved data are concerned.
         _display_mods = mods + [combined_name] if combiner is not None else list(mods)
+
+        # OSC addresses are built once here rather than per window.  The
+        # separator is mapped to something an OSC receiver will tolerate, which
+        # can in principle make two names collide — and the send path cannot
+        # report that, since a failure there must not kill acquisition.
+        _osc_names = [osc_address_name(m) for m in _display_mods]
+        _send_warned = [False, False]  # OSC, LSL — log the first failure only
+        if osc_sender is not None:
+            if len(set(_osc_names)) != len(_osc_names):
+                _clash = sorted({n for n in _osc_names if _osc_names.count(n) > 1})
+                raise ValueError(
+                    f"Modality names collide once sanitised for OSC: {_clash}. "
+                    "Rename an instance label so the addresses stay distinct."
+                )
+            # Say so rather than silently publishing to a different address than
+            # the name would suggest.
+            _renamed = {m: n for m, n in zip(_display_mods, _osc_names) if m != n}
+            if _renamed:
+                warn(
+                    "These names are not valid in an OSC address and are sent to a "
+                    f"sanitised one instead: {_renamed}. Subscribe to the address on "
+                    "the right.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         if combiner is not None:
             # A z-scored blend sits around 1; a blend of raw features keeps the
@@ -1450,7 +1562,7 @@ class RTStream(ModalityMixin):
         if protocol is None:
             _proto_map: dict[str, Any] = {}
         elif isinstance(protocol, dict):
-            _proto_map = dict(protocol)
+            _proto_map = dict(protocol)  # keys already validated above
         else:
             _proto_map = {mods[0]: protocol}
         reward_data: dict[str, list] = {m: [] for m in _proto_map}
@@ -1458,7 +1570,7 @@ class RTStream(ModalityMixin):
         # Delay accumulators live in the thread, assigned to self when done
         _acq_delays: list[float] = []
         _art_delays: list[float] = []
-        _meth_delays: dict[str, list] = {m: [] for m in mods}
+        _meth_delays: dict[str, list] = {s.name: [] for s in specs}
         _plot_delays: list[float] = []  # only used when viz runs inline
 
         # ---- Artifact rate tracking ----
@@ -1477,7 +1589,7 @@ class RTStream(ModalityMixin):
         )
 
         # ---- Z-score normalisation state ----
-        _z_buf: dict[str, list] = {m: [] for m in mods}
+        _z_buf: dict[str, list] = {s.name: [] for s in specs}
         _z_mean: dict[str, float] = {}
         _z_std: dict[str, float] = {}
 
@@ -1634,7 +1746,7 @@ class RTStream(ModalityMixin):
                     _snr_data.append(float(10.0 * np.log10(_sig.mean() / (abs(_noise) + 1e-300))))
 
                 futures = [
-                    self.executor.submit(nf_fns[i], data, **precomps[i]) for i in range(len(mods))
+                    self.executor.submit(nf_fns[i], data, **precomps[i]) for i in range(len(specs))
                 ]
                 _crossed_map: dict = {}
                 for m, fut in zip(mods, futures):
@@ -1700,15 +1812,28 @@ class RTStream(ModalityMixin):
 
                 if osc_sender is not None:
                     try:
-                        osc_sender.send_all(_display_mods, _vals)
+                        osc_sender.send_all(_osc_names, _vals)
                     except Exception:
-                        pass
+                        # Feedback delivery must never take the acquisition
+                        # thread down, but silence for a whole session is worse:
+                        # report the first failure, then stay quiet.
+                        if not _send_warned[0]:
+                            _send_warned[0] = True
+                            logger.warning(
+                                "OSC send failed; continuing without OSC feedback.",
+                                exc_info=True,
+                            )
 
                 if lsl_sender is not None:
                     try:
                         lsl_sender.push(_display_mods, _vals)
                     except Exception:
-                        pass
+                        if not _send_warned[1]:
+                            _send_warned[1] = True
+                            logger.warning(
+                                "LSL push failed; continuing without LSL feedback.",
+                                exc_info=True,
+                            )
 
                 _push_topo(data)
                 _push_brain(data)
@@ -1736,8 +1861,8 @@ class RTStream(ModalityMixin):
             # Threshold lines and reward zones update once per analysis
             # window (not per display frame), so the latest snapshot is
             # just held as-is rather than ramped like the value trace.
-            _latest_threshs: list = [None] * len(mods)
-            _latest_rewards: list = [None] * len(mods)
+            _latest_threshs: list = [None] * len(_display_mods)
+            _latest_rewards: list = [None] * len(_display_mods)
 
             def _pump_signal() -> None:
                 """Fast timer (~30 fps) — signal plot only.
@@ -2681,6 +2806,8 @@ class RTStream(ModalityMixin):
                 "New baseline: discarding %d cached source model(s).", len(self._source_models)
             )
         self._source_models = {}
+        # The ROI kernels were derived from those models, so they go too.
+        self._roi_kernels = {}
 
         inv_dir = self.subject_dir / "inv"
         _stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"
@@ -2882,6 +3009,11 @@ class RTStream(ModalityMixin):
                     "session": self.session,
                     "data_type": self.data_type,
                     "modalities": list(self.nf_data.keys()),
+                    # Instance name -> base modality, so a reader can group the
+                    # bands of one measure without knowing the separator.
+                    "modality_bases": {
+                        s.name: s.base for s in getattr(self, "_mod_specs", []) or []
+                    },
                     "sfreq_hz": float(getattr(self, "_sfreq", 0)),
                     "winsize_s": float(getattr(self, "winsize", 0)),
                     "duration_s": float(getattr(self, "duration", 0)),
@@ -3044,7 +3176,11 @@ class RTStream(ModalityMixin):
             If :meth:`record_baseline` has not been called yet.
         """
         self._ensure_dirs()
-        modalities = [self.modality] if isinstance(self.modality, str) else list(self.modality)
+        # Prefer the parsed specs so the report can never disagree with what
+        # the loop actually ran; fall back for a report built without one.
+        modalities = [s.name for s in getattr(self, "_mod_specs", []) or []] or (
+            [self.modality] if isinstance(self.modality, str) else list(self.modality)
+        )
         report = Report(title=f"Neurofeedback Session — {', '.join(modalities)}")
 
         # ── Baseline recording ────────────────────────────────────────────
@@ -3070,7 +3206,7 @@ class RTStream(ModalityMixin):
 
         for mod in modalities:
             params = self.mod_params_dict.get(mod, {})
-            if mod not in source_modalities:
+            if split_modality(mod)[0] not in source_modalities:
                 bads = self.picks if self.picks is not None else self.rec_info["ch_names"]
                 self.rec_info["bads"].extend(bads)
 

@@ -211,6 +211,28 @@ class ModalityMixin:
             logger.info("Built %r for method=%s atlas=%s", cache[key], method, atlas)
         return cache[key]
 
+    def _get_roi_kernel(self, model, rois, mri_resolution: bool):
+        """Return the sensor → ROI operator, building it at most once.
+
+        Several instances of one modality — the same ROI pairs in three
+        frequency bands, say — ask for an identical kernel, and building it is
+        the expensive part of source preparation for a volume atlas at
+        ``mri_resolution=True``.
+
+        The model is keyed by identity rather than by ``id()``: the cache holds
+        a reference, so an entry cannot outlive its model and be matched by a
+        later object that happens to reuse the address. :class:`~mne_rt.ROI` is
+        a frozen dataclass, so keying on the ROIs themselves distinguishes
+        same-named regions defined over different labels.
+        """
+        cache = getattr(self, "_roi_kernels", None)
+        if cache is None:
+            cache = self._roi_kernels = {}
+        key = (model, tuple(rois), bool(mri_resolution))
+        if key not in cache:
+            cache[key] = model.roi_kernel(rois, mri_resolution=mri_resolution)
+        return cache[key]
+
     def _roi_names(self, *legacy_keys: str) -> list:
         """ROI spec from ``rois``, falling back to the deprecated label keys."""
         rois = self.params.get("rois")
@@ -252,7 +274,7 @@ class ModalityMixin:
             return {
                 "model": model,
                 "rois": rois,
-                "kernel": model.roi_kernel(rois, mri_resolution=mri_resolution),
+                "kernel": self._get_roi_kernel(model, rois, mri_resolution),
                 # The operator's columns follow the forward model's channels, which
                 # exclude bads and any channel without a digitised position, so the
                 # data must be selected/reordered to match.

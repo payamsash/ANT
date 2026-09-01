@@ -1,6 +1,7 @@
 """Tests for RTStream instantiation and validation (no LSL required)."""
 
 import json
+import pathlib
 
 import numpy as np
 import pytest
@@ -1006,3 +1007,323 @@ def test_no_bad_channels_leaves_indexing_unchanged(tmp_path, array_info):
         assert nf._acquired_info() is nf.rec_info
     finally:
         nf.save()
+
+
+# ------------------------------------------------------------------
+# Instanced modalities — the same measure, several times over
+# ------------------------------------------------------------------
+
+
+def _run_instanced(tmp_path, array_info, modality, **kwargs):
+    """Run a short session and return the session object."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=2.0,
+            winsize=1.0,
+            modality=modality,
+            show_raw_signal=False,
+            show_nf_signal=False,
+            **kwargs,
+        )
+    finally:
+        nf.save()
+    return nf
+
+
+def test_two_instances_of_one_modality_are_independent(tmp_path, array_info):
+    """The load-bearing test: two bands of one measure, two distinct traces.
+
+    If ``precomps`` or ``mod_params_dict`` collapsed on the shared base name,
+    both instances would compute the same band and the traces would be equal.
+    """
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        modality_params={
+            "sensor_power@alpha": {"frange": [8, 13]},
+            "sensor_power@theta": {"frange": [4, 8]},
+        },
+    )
+
+    assert set(nf.nf_data) == {"sensor_power@alpha", "sensor_power@theta"}
+    alpha = nf.nf_data["sensor_power@alpha"]
+    theta = nf.nf_data["sensor_power@theta"]
+    assert len(alpha) == len(theta) > 0
+    assert alpha != theta
+
+    assert nf.mod_params_dict["sensor_power@alpha"]["frange"] == [8, 13]
+    assert nf.mod_params_dict["sensor_power@theta"]["frange"] == [4, 8]
+
+
+def test_base_params_are_shared_across_instances(tmp_path, array_info):
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        modality_params={
+            "sensor_power": {"method": "multitaper"},
+            "sensor_power@alpha": {"frange": [8, 13]},
+            "sensor_power@theta": {"frange": [4, 8]},
+        },
+    )
+    for name in ("sensor_power@alpha", "sensor_power@theta"):
+        assert nf.mod_params_dict[name]["method"] == "multitaper"
+
+
+def test_plain_and_instanced_names_coexist(tmp_path, array_info):
+    nf = _run_instanced(tmp_path, array_info, ["sensor_power", "sensor_power@theta"])
+    assert set(nf.nf_data) == {"sensor_power", "sensor_power@theta"}
+
+
+def test_duplicate_instance_names_rejected(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="listed more than once"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power@a", "sensor_power@a"],
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "name, match",
+    [
+        ("sensor_power@a@b", "more than one"),
+        ("@alpha", "empty base"),
+        ("sensor_power@", "empty instance label"),
+        ("sensor_power@bad label", "may only contain"),
+    ],
+)
+def test_malformed_instance_names_rejected(tmp_path, array_info, name, match):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match=match):
+        nf.record_main(duration=1.0, modality=[name], show_raw_signal=False, show_nf_signal=False)
+
+
+def test_picks_rejected_for_instanced_source_modality(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="'picks' must be None"):
+        nf.record_main(
+            duration=1.0,
+            modality=["source_connectivity@theta"],
+            picks=array_info["ch_names"][:4],
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_picks_allowed_when_only_the_label_says_source(tmp_path, array_info):
+    """The sensor/source test must read the base, not the whole name."""
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@source"],
+        picks=array_info["ch_names"][:4],
+    )
+    assert "sensor_power@source" in nf.nf_data
+
+
+# ---- protocols ---------------------------------------------------
+
+
+class _CountingProtocol:
+    """Records how many times it was evaluated, and with what."""
+
+    def __init__(self, threshold=0.0):
+        self.current_threshold = threshold
+        self.values = []
+
+    def evaluate(self, value):
+        self.values.append(float(value))
+        return (float(value) > self.current_threshold, abs(float(value)))
+
+
+def test_each_instance_drives_its_own_protocol(tmp_path, array_info):
+    """One protocol object per instance, each evaluated exactly once a window.
+
+    A shared object would be fired twice per window with two different values,
+    silently corrupting any protocol that accumulates state.
+    """
+    p_alpha, p_theta = _CountingProtocol(), _CountingProtocol()
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        modality_params={
+            "sensor_power@alpha": {"frange": [8, 13]},
+            "sensor_power@theta": {"frange": [4, 8]},
+        },
+        protocol={"sensor_power@alpha": p_alpha, "sensor_power@theta": p_theta},
+    )
+
+    n_windows = len(nf.nf_data["sensor_power@alpha"])
+    assert n_windows > 0
+    assert len(p_alpha.values) == len(p_theta.values) == n_windows
+    assert p_alpha.values != p_theta.values
+    assert len(nf.reward_data["sensor_power@alpha"]) == n_windows
+
+
+def test_protocol_keyed_by_instanced_base_rejected(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="active instance"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power@alpha", "sensor_power@theta"],
+            protocol={"sensor_power": _CountingProtocol()},
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_protocol_validation_happens_before_resources_are_created(tmp_path, array_info):
+    """record_main has no teardown path, so it must reject before it allocates.
+
+    Raising after the thread pool and the Qt windows exist would leave both
+    orphaned.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="active instance"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power@alpha", "sensor_power@theta"],
+            protocol={"sensor_power": _CountingProtocol()},
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    assert getattr(nf, "executor", None) is None
+
+
+def test_protocol_keyed_by_unknown_modality_rejected(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="does not name an active modality"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power@alpha"],
+            protocol={"hjorth": _CountingProtocol()},
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+# ---- combiner ----------------------------------------------------
+
+
+def test_combiner_over_two_instances(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner
+
+    combiner = WeightedSumCombiner(weights={"sensor_power@alpha": 0.5, "sensor_power@theta": 0.5})
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        modality_params={
+            "sensor_power@alpha": {"frange": [8, 13]},
+            "sensor_power@theta": {"frange": [4, 8]},
+        },
+        combiner=combiner,
+        zscore_normalize=True,
+        zscore_warmup=2,
+    )
+    assert "combined" in nf.nf_data
+    assert len(nf.nf_data["combined"]) == len(nf.nf_data["sensor_power@alpha"])
+
+
+def test_combiner_naming_an_instanced_base_suggests_the_instances(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="Did you mean"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power@alpha", "sensor_power@theta"],
+            combiner=WeightedSumCombiner(weights={"sensor_power": 1.0}),
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+# ---- outputs -----------------------------------------------------
+
+
+def test_instanced_names_round_trip_through_save(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=2.0,
+            winsize=1.0,
+            modality=["sensor_power@alpha", "sensor_power@theta"],
+            protocol={"sensor_power@alpha": _CountingProtocol(threshold=-1e30)},
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    finally:
+        nf.save(bids_tsv=True)
+
+    beh = next(pathlib.Path(nf.subject_dir).rglob("*_beh.json"))
+    payload = json.loads(beh.read_text())
+    assert set(payload["meta"]["modalities"]) == {"sensor_power@alpha", "sensor_power@theta"}
+    assert payload["meta"]["modality_bases"] == {
+        "sensor_power@alpha": "sensor_power",
+        "sensor_power@theta": "sensor_power",
+    }
+    assert "sensor_power@alpha" in payload["data"]
+    assert "reward_sensor_power@alpha" in payload["data"]
+
+    tsv = next(pathlib.Path(nf.subject_dir).rglob("*_beh.tsv"))
+    header = tsv.read_text().splitlines()[0].split("\t")
+    assert "sensor_power@alpha" in header and "sensor_power@theta" in header
+
+
+def test_osc_addresses_are_sanitised_and_distinct(tmp_path, array_info):
+    """'@' must not reach an OSC address, and the two must stay distinct."""
+
+    class _FakeOSC:
+        def __init__(self):
+            self.sent = []
+
+        def send_all(self, modalities, values):
+            self.sent.append(list(modalities))
+
+    sender = _FakeOSC()
+    _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        osc_sender=sender,
+    )
+    assert sender.sent
+    for names in sender.sent:
+        assert names == ["sensor_power_alpha", "sensor_power_theta"]
+        assert not any("@" in n for n in names)
+
+
+def test_per_instance_delays_are_recorded(tmp_path, array_info):
+    nf = _run_instanced(
+        tmp_path,
+        array_info,
+        ["sensor_power@alpha", "sensor_power@theta"],
+        estimate_delays=True,
+    )
+    assert set(nf.method_delays) == {"sensor_power@alpha", "sensor_power@theta"}
+    assert all(v for v in nf.method_delays.values())

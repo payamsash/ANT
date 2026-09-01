@@ -574,3 +574,92 @@ def test_get_inverse_operator_reads_bids_stem(nf_obj, tmp_path, monkeypatch):
     monkeypatch.setattr(modalities, "read_inverse_operator", _fake_read)
     assert nf_obj._get_inverse_operator() == "inverse-operator"
     assert str(seen["fname"]) == str(expected)
+
+
+# ------------------------------------------------------------------
+# ROI-kernel caching
+# ------------------------------------------------------------------
+
+
+class _FakeROI:
+    def __init__(self, name):
+        self.name = name
+
+
+class _CountingModel:
+    """Stands in for SourceModel, counting how often the kernel is built."""
+
+    def __init__(self):
+        self.n_builds = 0
+
+    def roi_kernel(self, rois, mri_resolution):
+        self.n_builds += 1
+        # Includes members, so two same-named ROIs over different labels give
+        # different kernels -- as they would in reality.
+        return ("kernel", tuple((r.name, getattr(r, "members", ())) for r in rois), mri_resolution)
+
+
+def test_roi_kernel_is_built_once_per_distinct_request():
+    """Several bands of one measure ask for an identical kernel.
+
+    Building it is the expensive part of source preparation, so it must be
+    shared rather than repeated per instance.
+    """
+    from mne_rt.modalities import ModalityMixin
+
+    obj = ModalityMixin()
+    model = _CountingModel()
+    rois = [_FakeROI("broca"), _FakeROI("wernicke")]
+
+    first = obj._get_roi_kernel(model, rois, True)
+    second = obj._get_roi_kernel(model, list(rois), True)
+    assert second is first
+    assert model.n_builds == 1
+
+    # A different ROI set, or a different resolution, is a different kernel.
+    obj._get_roi_kernel(model, [_FakeROI("broca")], True)
+    obj._get_roi_kernel(model, rois, False)
+    assert model.n_builds == 3
+
+
+def test_roi_kernel_cache_is_per_model():
+    from mne_rt.modalities import ModalityMixin
+
+    obj = ModalityMixin()
+    rois = [_FakeROI("broca")]
+    model_a, model_b = _CountingModel(), _CountingModel()
+    obj._get_roi_kernel(model_a, rois, True)
+    obj._get_roi_kernel(model_b, rois, True)
+    assert model_a.n_builds == model_b.n_builds == 1
+
+
+def test_roi_kernel_cache_distinguishes_same_named_rois():
+    """Two ROIs may share a name but cover different labels.
+
+    Keying on the name alone would hand the second instance the first one's
+    kernel, silently measuring the wrong region.
+    """
+    from mne_rt.modalities import ModalityMixin
+    from mne_rt.source import ROI
+
+    obj = ModalityMixin()
+    model = _CountingModel()
+    left = [ROI(name="target", members=("Left-Hippocampus",), kind="volume")]
+    right = [ROI(name="target", members=("Right-Hippocampus",), kind="volume")]
+
+    k_left = obj._get_roi_kernel(model, left, True)
+    k_right = obj._get_roi_kernel(model, right, True)
+    assert model.n_builds == 2
+    assert k_left != k_right
+
+
+def test_roi_kernel_cache_holds_its_model_alive():
+    """The cache must not key on an address a later model could reuse."""
+    from mne_rt.modalities import ModalityMixin
+
+    obj = ModalityMixin()
+    rois = [_FakeROI("broca")]
+    model = _CountingModel()
+    obj._get_roi_kernel(model, rois, True)
+    # A cache keyed by id() could match a new model that reused the address.
+    assert any(model is key[0] for key in obj._roi_kernels)

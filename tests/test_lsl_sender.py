@@ -210,3 +210,78 @@ def test_repr():
     r = repr(sender)
     assert "LSLSender" in r
     assert "TestStream" in r
+
+
+# ------------------------------------------------------------------
+# Channel labels reach the StreamInfo
+# ------------------------------------------------------------------
+
+
+def test_push_publishes_channel_names():
+    """Labels must land in the StreamInfo, not just be stored on the sender.
+
+    Position-based subscription is ambiguous once two channels share a base
+    modality and differ only by instance label.
+    """
+    sender, MockInfo, _ = _make_sender(n_channels=2)
+    sender.push(["source_connectivity@theta", "source_connectivity@alpha"], [0.1, 0.2])
+
+    assert sender.channel_labels == [
+        "source_connectivity@theta",
+        "source_connectivity@alpha",
+    ]
+    info = MockInfo.return_value
+    info.set_channel_names.assert_called_with(
+        ["source_connectivity@theta", "source_connectivity@alpha"]
+    )
+
+
+def test_channel_names_are_padded_to_the_outlet_width():
+    sender, MockInfo, _ = _make_sender(n_channels=4)
+    sender.push(["sensor_power"], [0.1])
+    names = MockInfo.return_value.set_channel_names.call_args[0][0]
+    assert names == ["sensor_power", "ch1", "ch2", "ch3"]
+
+
+def test_push_survives_a_backend_without_set_channel_names():
+    """The pylsl fallback has no such setter; labels are never worth a crash."""
+    sender, MockInfo, MockOutlet = _make_sender(n_channels=2)
+    MockInfo.return_value.set_channel_names.side_effect = AttributeError("no such method")
+    sender.push(["sensor_power", "hjorth"], [0.1, 0.2])
+    MockOutlet.return_value.push_sample.assert_called()
+
+
+def test_outlet_is_not_rebuilt_when_labels_are_unchanged():
+    sender, MockInfo, _ = _make_sender(n_channels=2)
+    sender.push(["sensor_power", "hjorth"], [0.1, 0.2])
+    n_after_first = MockInfo.call_count
+    sender.push(["sensor_power", "hjorth"], [0.3, 0.4])
+    assert MockInfo.call_count == n_after_first
+
+
+def test_changing_labels_does_not_rebuild_the_outlet():
+    """Rebuilding drops subscribers, so it must not happen per sample.
+
+    ``push_value`` passes a different single name each call, which would
+    otherwise tear the outlet down on every sample.
+    """
+    sender, MockInfo, _ = _make_sender(n_channels=2)
+    sender.push_value("sensor_power", 0.1)
+    n_after_first = MockInfo.call_count
+    for _ in range(5):
+        sender.push_value("sensor_power", 0.2)
+        sender.push_value("hjorth", 0.3)
+    assert MockInfo.call_count == n_after_first
+    assert sender.channel_labels == ["hjorth"]  # still tracked
+
+
+def test_channel_names_given_up_front_avoid_any_rebuild():
+    sender, MockInfo, _ = _make_sender(
+        n_channels=2, channel_names=["sensor_power@alpha", "sensor_power@theta"]
+    )
+    MockInfo.return_value.set_channel_names.assert_called_with(
+        ["sensor_power@alpha", "sensor_power@theta"]
+    )
+    n_after_init = MockInfo.call_count
+    sender.push(["sensor_power@alpha", "sensor_power@theta"], [0.1, 0.2])
+    assert MockInfo.call_count == n_after_init  # outlet never rebuilt

@@ -51,6 +51,7 @@ from mne_icalabel import label_components
 from nibabel.freesurfer import read_morph_data
 
 from mne_rt._logging import logger
+from mne_rt._naming import split_modality
 
 
 def timed(func):
@@ -131,7 +132,7 @@ def get_canonical_freqs(frange_name):
         )
 
 
-def get_params(config_file, modality, modality_params):
+def get_params(config_file, modality, modality_params, instance=None):
     """Load and update parameters for a given neurofeedback (NF) modality.
 
     Parameters
@@ -140,18 +141,28 @@ def get_params(config_file, modality, modality_params):
             Path to the YAML configuration file containing modality parameters.
     modality : str
             Name of the neurofeedback modality. Must be present in the
-            ``NF_modality`` section of the config file.
+            ``NF_modality`` section of the config file. An instanced name
+            (``"source_connectivity@theta"``, see :mod:`mne_rt._naming`) is
+            accepted and split, so its base selects the config entry.
     modality_params : dict | None
             Optional parameter overrides, in either of two forms:
 
             * **nested** — ``{modality_name: {param: value}}``, the form
               :meth:`~mne_rt.RTStream.record_main` passes when several
-              modalities run together.  Only the entry matching ``modality``
-              is applied; entries for other modalities are ignored.
+              modalities run together.  Only the entries matching this
+              modality are applied; entries for other modalities are ignored.
+              Keys may be base modalities or instanced names; a base entry
+              acts as a default for every instance of it, and an instance
+              entry takes precedence.
             * **flat** — ``{param: value}``, applied directly to ``modality``.
 
             The two are told apart by checking whether any top-level key names
-            a modality defined in the config file.
+            a modality defined in the config file, or an instance of one.
+    instance : str | None
+            Full instanced name whose overrides should be applied on top of
+            the base entry's.  Defaults to ``modality`` itself.  Passing it
+            explicitly lets a caller that has already parsed the name avoid a
+            second split.
 
     Returns
     -------
@@ -163,6 +174,8 @@ def get_params(config_file, modality, modality_params):
     ValueError
             If the modality is not found in the config file.
     ValueError
+            If ``instance`` and ``modality`` name different base modalities.
+    ValueError
             If an override names a parameter this modality does not have.
 
     Notes
@@ -170,29 +183,42 @@ def get_params(config_file, modality, modality_params):
     This function first loads default parameters for the requested modality
     from the YAML file. If ``modality_params`` is provided, the defaults
     are updated with the user-specified overrides.
+
+    Examples
+    --------
+    Three bands of one measure, sharing everything but their frequency range::
+
+        modality_params = {
+            "source_connectivity": {"method": "imcoh"},   # applies to all three
+            "source_connectivity@theta": {"frange": [4, 8]},
+            "source_connectivity@alpha": {"frange": [8, 13]},
+            "source_connectivity@beta": {"frange": [13, 30]},
+        }
     """
     with open(config_file, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    if modality not in config["NF_modality"]:
+    known = set(config["NF_modality"])
+    base, _ = split_modality(modality)
+    if instance is None:
+        instance = modality
+    elif split_modality(instance)[0] != base:
         raise ValueError(
-            f"Unknown modality {modality!r}, must be one of {list(config['NF_modality'].keys())}"
+            f"`instance` {instance!r} is not an instance of modality {modality!r}; "
+            "they must share a base modality."
         )
 
-    # get params for this modality
-    params = deepcopy(config["NF_modality"][modality])
-    if modality_params:
-        # Nested {modality: {...}} or flat {param: ...}?  A key naming any known
-        # modality means the caller used the nested form.
-        if set(modality_params) & set(config["NF_modality"]):
-            overrides = modality_params.get(modality) or {}
-        else:
-            overrides = modality_params
+    if base not in known:
+        named = f" (from {instance!r})" if instance != base else ""
+        raise ValueError(
+            f"Unknown modality {base!r}{named}, must be one of {list(config['NF_modality'].keys())}"
+        )
 
+    def _merge(params, overrides, named_as):
         unknown = set(overrides) - set(params)
         if unknown:
             raise ValueError(
-                f"Unknown parameter(s) {sorted(unknown)} for modality {modality!r}. "
+                f"Unknown parameter(s) {sorted(unknown)} for modality {named_as!r}. "
                 f"Available: {sorted(params)}"
             )
         for key, value in overrides.items():
@@ -201,6 +227,23 @@ def get_params(config_file, modality, modality_params):
                 params[key].update(value)
             else:
                 params[key] = value
+
+    # get params for this modality
+    params = deepcopy(config["NF_modality"][base])
+    if modality_params:
+        # Nested {modality: {...}} or flat {param: ...}?  A key naming any known
+        # modality — or an instance of one — means the caller used the nested form.
+        nested = any(
+            key in known or split_modality(key)[0] in known for key in map(str, modality_params)
+        )
+        if nested:
+            # The base entry is the default for every instance of it; the
+            # instance's own entry is layered on top and wins.
+            _merge(params, modality_params.get(base) or {}, base)
+            if instance != base:
+                _merge(params, modality_params.get(instance) or {}, instance)
+        else:
+            _merge(params, modality_params, instance)
     return params
 
 
