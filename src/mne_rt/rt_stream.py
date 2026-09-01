@@ -56,6 +56,7 @@ from mne_lsl.stream import StreamLSL as Stream
 from pyqtgraph.Qt import QtWidgets
 
 from mne_rt._logging import logger, set_log_level, verbose
+from mne_rt.combiners import GeometricMeanCombiner, ZScoredNormCombiner
 from mne_rt.decoding import RTDecode
 from mne_rt.modalities import ModalityMixin
 from mne_rt.tools import (
@@ -975,6 +976,8 @@ class RTStream(ModalityMixin):
         osc_sender: Optional[Any] = None,
         lsl_sender: Optional[Any] = None,
         protocol: Optional[Any] = None,
+        combiner: Optional[Any] = None,
+        combined_name: str = "combined",
         save_raw: bool = False,
         ref_channel: str = "Fp1",
         signal_smoothing: float = 0.25,
@@ -1097,6 +1100,21 @@ class RTStream(ModalityMixin):
             protocol, or protocols with no single-level threshold (e.g.
             :class:`~mne_rt.protocols.LinearTrendProtocol`), simply show no
             line.
+        combiner : FeatureCombiner | None, default None
+            Reduce the per-modality values to a single scalar once per window,
+            after z-scoring and EMA smoothing.  The result is appended as an
+            extra trace named ``combined_name`` and is treated as a modality
+            throughout: it is plotted, can be driven by its own protocol, is
+            broadcast over OSC/LSL, and is saved alongside the others.  The
+            per-modality traces are kept, not replaced.
+
+            Combining features whose units differ by orders of magnitude (band
+            power in V²/Hz against a dimensionless laterality index, say)
+            requires ``zscore_normalize=True``; otherwise the largest-scale
+            feature dominates, and a warning is issued.
+            See :mod:`mne_rt.combiners`.
+        combined_name : str, default "combined"
+            Name of the combined trace.  Must not collide with a modality name.
         save_raw : bool, default False
             Persist the raw pre-correction M/EEG acquired during the main
             session to ``raw/<stem>-raw.fif``.  Off by default because FIF
@@ -1239,6 +1257,7 @@ class RTStream(ModalityMixin):
         # Modality preparation
         mods = [modality] if isinstance(modality, str) else list(modality)
         self._mods = mods
+
         self.executor = ThreadPoolExecutor(max_workers=len(mods))
         self.mod_params_dict = {
             mod: get_params(self.config_file, mod, self.modality_params) for mod in mods
@@ -1279,6 +1298,72 @@ class RTStream(ModalityMixin):
             "scp": 50e-6,
             "decode": 1.0,
         }
+        # NFPlot looks every displayed modality up in scales_dict, so the
+        # combined trace needs an entry of its own.
+        if combiner is not None:
+            if not callable(getattr(combiner, "combine", None)):
+                raise TypeError(
+                    "`combiner` must expose a combine(values) method "
+                    f"(see mne_rt.FeatureCombiner); got {type(combiner).__name__}."
+                )
+            # The combined trace shares namespaces with the modalities, the
+            # per-modality scales and labels, and the columns save() writes.
+            _reserved = set(mods) | {"snr_db"} | set(scales_dict)
+            if combined_name in _reserved or combined_name.startswith("reward_"):
+                raise ValueError(
+                    f"`combined_name` {combined_name!r} is already in use — it collides with "
+                    "an active modality, a built-in modality name (whose display scale and "
+                    "axis label it would inherit), or a reserved output column "
+                    "('snr_db', 'reward_*'). Choose another."
+                )
+            expected = getattr(combiner, "features", None)
+            missing = [f for f in (expected or []) if f not in mods]
+            if missing:
+                raise ValueError(
+                    f"{type(combiner).__name__} expects feature(s) {missing}, which are not "
+                    f"among the active modalities {mods}."
+                )
+            if isinstance(combiner, ZScoredNormCombiner):
+                pass  # normalises each feature itself; nothing to advise
+            elif isinstance(combiner, GeometricMeanCombiner):
+                if zscore_normalize:
+                    warn(
+                        "GeometricMeanCombiner takes the log of each value, so it needs "
+                        "positive inputs, but z-scores are negative in roughly half of all "
+                        "windows. Those are floored to `floor` and log(1e-9) collapses the "
+                        "combined value by orders of magnitude. Use ZScoredNormCombiner to "
+                        "mix features of different scale, or keep zscore_normalize=False "
+                        "and feed GeometricMeanCombiner strictly positive features.",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+            elif not zscore_normalize:
+                warn(
+                    f"{type(combiner).__name__} blends its features in their native units. "
+                    "If they differ in scale — band power is ~1e-11 V²/Hz while a laterality "
+                    "index is ~1 — the largest one dominates the combined value. Pass "
+                    "zscore_normalize=True, or use ZScoredNormCombiner, if that applies "
+                    "to the modalities you are combining.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+            # Each record_main() is a fresh session, and record_main rebuilds its own
+            # z-score state per call; reset the combiner's so the two normalisation
+            # layers agree across the blocks of a run_blocks() sequence.
+            if callable(getattr(combiner, "reset", None)):
+                combiner.reset()
+
+        # The combined trace is a modality as far as the plot, the protocols, the
+        # feedback outputs and the saved data are concerned.
+        _display_mods = mods + [combined_name] if combiner is not None else list(mods)
+
+        if combiner is not None:
+            # A z-scored blend sits around 1; a blend of raw features keeps the
+            # scale of its inputs, and a fixed 1.0 would flatten it to zero on
+            # the plot. Take the largest constituent scale as the closest guess.
+            _default_scale = 1.0 if zscore_normalize else max(scales_dict.get(m, 1.0) for m in mods)
+            scales_dict.setdefault(combined_name, _default_scale)
 
         nf_plot: Optional[NFPlot] = None
         raw_plot: Optional[RawPlot] = None
@@ -1293,7 +1378,7 @@ class RTStream(ModalityMixin):
 
         if show_nf_signal:
             nf_plot = NFPlot(
-                modalities=mods,
+                modalities=_display_mods,
                 scales_dict=scales_dict,
                 sfreq=30.0,  # pump timer rate drives display at 30 fps
                 time_window=time_window,
@@ -1349,7 +1434,7 @@ class RTStream(ModalityMixin):
             _queue.Queue(maxsize=4) if raw_plot is not None else None
         )
         done_event = threading.Event()
-        nf_data: dict[str, list] = {m: [] for m in mods}
+        nf_data: dict[str, list] = {m: [] for m in _display_mods}
         _ema: dict[str, float] = {}  # EMA state, seeded on first window
 
         # Build protocol map: {modality_name: protocol_instance}
@@ -1560,12 +1645,45 @@ class RTStream(ModalityMixin):
                     if estimate_delays:
                         _meth_delays[m].append(m_delay)
 
-                _vals = [nf_data[m][-1] for m in mods]
+                if combiner is not None:
+                    # _apply_zscore passes values through unchanged until each
+                    # modality has `zscore_warmup` windows behind it. Combining
+                    # during that period would mix native units — the very thing
+                    # zscore_normalize=True is meant to prevent — and the combined
+                    # trace would then jump by orders of magnitude the moment
+                    # normalisation engaged, fitting any attached protocol's
+                    # baseline on meaningless numbers. Hold at 0.0 until every
+                    # feature is normalised, as ZScoredNormCombiner does.
+                    _warm = not zscore_normalize or all(
+                        len(_z_buf[m]) >= zscore_warmup for m in mods
+                    )
+                    if _warm:
+                        try:
+                            _mixed = float(combiner.combine({m: nf_data[m][-1] for m in mods}))
+                        except Exception:
+                            # User-supplied code; a raise here would skip
+                            # done_event.set() below and hang the Qt loop.
+                            logger.exception(
+                                "%s.combine() failed; using 0.0 for this window.",
+                                type(combiner).__name__,
+                            )
+                            _mixed = 0.0
+                    else:
+                        _mixed = 0.0
+                    nf_data[combined_name].append(_mixed)
+                    if _warm and combined_name in _proto_map:
+                        _crossed, _mag = _proto_map[combined_name].evaluate(_mixed)
+                        reward_data[combined_name].append(_mag if _crossed else 0.0)
+                        _crossed_map[combined_name] = _crossed
+                    elif combined_name in _proto_map:
+                        reward_data[combined_name].append(0.0)
+
+                _vals = [nf_data[m][-1] for m in _display_mods]
                 _threshs = [
                     getattr(_proto_map[m], "current_threshold", None) if m in _proto_map else None
-                    for m in mods
+                    for m in _display_mods
                 ]
-                _rewards = [_crossed_map.get(m) for m in mods]
+                _rewards = [_crossed_map.get(m) for m in _display_mods]
                 try:
                     nf_queue.put_nowait((_vals, _threshs, _rewards))
                 except _queue.Full:
@@ -1573,13 +1691,13 @@ class RTStream(ModalityMixin):
 
                 if osc_sender is not None:
                     try:
-                        osc_sender.send_all(mods, _vals)
+                        osc_sender.send_all(_display_mods, _vals)
                     except Exception:
                         pass
 
                 if lsl_sender is not None:
                     try:
-                        lsl_sender.push(mods, _vals)
+                        lsl_sender.push(_display_mods, _vals)
                     except Exception:
                         pass
 
@@ -2520,7 +2638,7 @@ class RTStream(ModalityMixin):
         """
         self._ensure_dirs()
         src_type = src_type if src_type is not None else self.source_space
-        self.inv, self.fwd, self.noise_cov, self.src = _compute_inv_operator(
+        self.inv, self.fwd, self.noise_cov, self.src, _raw_fwd = _compute_inv_operator(
             self.raw_baseline,
             subject_fs_id=self.subject_fs_id,
             subjects_fs_dir=self.subjects_fs_dir,
@@ -2541,9 +2659,19 @@ class RTStream(ModalityMixin):
         if data_cov is not None:
             self.data_cov = data_cov
         else:
-            self.data_cov = compute_raw_covariance(
-                self.raw_baseline, method=data_cov_method, verbose=False
+            # Estimate on `_raw_fwd`, the recording the forward model and noise
+            # covariance were built from — same channels, same average-reference
+            # projection. Using self.raw_baseline here would hand make_lcmv a
+            # projected info together with an unprojected covariance.
+            self.data_cov = compute_raw_covariance(_raw_fwd, method=data_cov_method, verbose=False)
+
+        # The cached SourceModels were built from the previous baseline's forward
+        # model and covariances; a new baseline invalidates them.
+        if getattr(self, "_source_models", None):
+            logger.info(
+                "New baseline: discarding %d cached source model(s).", len(self._source_models)
             )
+        self._source_models = {}
 
         inv_dir = self.subject_dir / "inv"
         _stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"

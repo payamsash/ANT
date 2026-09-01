@@ -637,3 +637,261 @@ def test_invalid_source_pos_raises(tmp_path, pos):
 
 def test_source_pos_stored(tmp_path):
     assert _make_rt_stream(tmp_path, source_pos=3.0).source_pos == 3.0
+
+
+# ------------------------------------------------------------------
+# Feature combiners in the live loop
+# ------------------------------------------------------------------
+
+
+def _run_with_combiner(tmp_path, array_info, combiner, **kwargs):
+    """Run a short two-modality session and return the session object."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=2.0,
+            winsize=1.0,
+            modality=["sensor_power", "hjorth"],
+            combiner=combiner,
+            zscore_normalize=True,
+            zscore_warmup=2,
+            show_raw_signal=False,
+            show_nf_signal=False,
+            **kwargs,
+        )
+    finally:
+        nf.save()
+    return nf
+
+
+def test_combiner_adds_a_combined_trace(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner
+
+    combiner = WeightedSumCombiner(weights={"sensor_power": 0.6, "hjorth": 0.4})
+    nf = _run_with_combiner(tmp_path, array_info, combiner)
+
+    assert "combined" in nf.nf_data
+    assert len(nf.nf_data["combined"]) > 0
+    # the per-modality traces are kept, not replaced
+    assert len(nf.nf_data["sensor_power"]) == len(nf.nf_data["combined"])
+    assert len(nf.nf_data["hjorth"]) == len(nf.nf_data["combined"])
+
+
+def test_combined_value_is_the_combiner_output(tmp_path, array_info):
+    """Once z-scoring is warmed up, the combined trace is the combiner's output."""
+    from mne_rt import WeightedSumCombiner
+
+    combiner = WeightedSumCombiner(weights={"sensor_power": 0.6, "hjorth": 0.4})
+    nf = _run_with_combiner(tmp_path, array_info, combiner)
+
+    warm = 2 - 1  # zscore_warmup=2 in the helper; normalised from that index on
+    power = np.asarray(nf.nf_data["sensor_power"])[warm:]
+    hjorth = np.asarray(nf.nf_data["hjorth"])[warm:]
+    combined = np.asarray(nf.nf_data["combined"])[warm:]
+    np.testing.assert_allclose(combined, 0.6 * power + 0.4 * hjorth, rtol=1e-9)
+
+
+def test_combined_held_at_zero_until_zscoring_warms_up(tmp_path, array_info):
+    """Guards against a scale discontinuity at the end of warmup.
+
+    _apply_zscore passes values through in their native units until each
+    modality has `zscore_warmup` windows behind it. Combining then would mix
+    V²/Hz with a dimensionless index, and the combined trace would jump by
+    orders of magnitude the moment normalisation engaged — fitting any attached
+    protocol's baseline on meaningless numbers.
+    """
+    from mne_rt import WeightedSumCombiner
+
+    combiner = WeightedSumCombiner(weights={"sensor_power": 0.6, "hjorth": 0.4})
+    nf = _run_with_combiner(tmp_path, array_info, combiner)
+    assert nf.nf_data["combined"][0] == 0.0
+    assert any(v != 0.0 for v in nf.nf_data["combined"][1:])
+
+
+def test_geometric_mean_with_zscoring_warns(tmp_path, array_info):
+    """z-scores go negative; GeometricMeanCombiner logs them and collapses."""
+    from mne_rt import GeometricMeanCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=10.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        with pytest.warns(RuntimeWarning, match="positive inputs"):
+            nf.record_main(
+                duration=1.0,
+                winsize=1.0,
+                modality=["sensor_power", "hjorth"],
+                combiner=GeometricMeanCombiner(features=["sensor_power", "hjorth"]),
+                zscore_normalize=True,
+                zscore_warmup=2,
+                show_raw_signal=False,
+                show_nf_signal=False,
+            )
+    finally:
+        nf.save()
+
+
+def test_zscored_norm_combiner_does_not_warn(tmp_path, array_info, recwarn):
+    """It normalises internally, so advising zscore_normalize would be wrong."""
+    from mne_rt import ZScoredNormCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=10.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=1.0,
+            winsize=1.0,
+            modality=["sensor_power", "hjorth"],
+            combiner=ZScoredNormCombiner(features=["sensor_power", "hjorth"], warmup=2),
+            zscore_normalize=False,
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    finally:
+        nf.save()
+    assert not [w for w in recwarn if "zscore_normalize" in str(w.message)]
+
+
+def test_a_failing_combiner_does_not_hang_the_session(tmp_path, array_info):
+    """combine() is user code; raising must not skip the loop's shutdown."""
+
+    class _Exploding:
+        features = ["sensor_power"]
+
+        def combine(self, values):
+            raise RuntimeError("boom")
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=10.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=1.0,
+            winsize=1.0,
+            modality=["sensor_power"],
+            combiner=_Exploding(),
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    finally:
+        nf.save()
+    # the session completed, and the failed windows fell back to 0.0
+    assert len(nf.nf_data["combined"]) == len(nf.nf_data["sensor_power"])
+    assert all(v == 0.0 for v in nf.nf_data["combined"])
+
+
+@pytest.mark.parametrize("name", ["snr_db", "entropy", "reward_x"])
+def test_reserved_combined_names_rejected(tmp_path, array_info, name):
+    """The combined trace shares namespaces with scales, labels and saved columns."""
+    from mne_rt import WeightedSumCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=5.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="already in use"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power"],
+            combiner=WeightedSumCombiner(weights={"sensor_power": 1.0}),
+            combined_name=name,
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_combined_trace_can_drive_a_protocol(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner, ZScoreProtocol
+
+    combiner = WeightedSumCombiner(weights={"sensor_power": 1.0, "hjorth": 1.0})
+    nf = _run_with_combiner(
+        tmp_path,
+        array_info,
+        combiner,
+        protocol={"combined": ZScoreProtocol(warmup_windows=1)},
+    )
+    assert "combined" in nf.reward_data
+    assert len(nf.reward_data["combined"]) == len(nf.nf_data["combined"])
+
+
+def test_combined_trace_is_saved(tmp_path, array_info):
+    import json
+
+    from mne_rt import WeightedSumCombiner
+
+    combiner = WeightedSumCombiner(weights={"sensor_power": 1.0, "hjorth": 1.0})
+    nf = _run_with_combiner(tmp_path, array_info, combiner)
+    saved = nf.save()
+    payload = json.loads(saved["nf_data"].read_text())
+    assert "combined" in payload["data"]
+
+
+def test_combiner_must_expose_combine(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=5.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(TypeError, match="combine"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power"],
+            combiner=object(),
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_combined_name_collision_rejected(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=5.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="collides"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power"],
+            combiner=WeightedSumCombiner(weights={"sensor_power": 1.0}),
+            combined_name="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_combiner_requiring_an_inactive_modality_is_rejected(tmp_path, array_info):
+    from mne_rt import WeightedSumCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=5.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    with pytest.raises(ValueError, match="laterality"):
+        nf.record_main(
+            duration=1.0,
+            modality=["sensor_power"],
+            combiner=WeightedSumCombiner(weights={"sensor_power": 1.0, "laterality": 1.0}),
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+
+
+def test_combiner_without_zscore_warns_about_scale(tmp_path, array_info):
+    """Mixing raw features of different magnitudes needs normalisation."""
+    from mne_rt import WeightedSumCombiner
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=10.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        with pytest.warns(RuntimeWarning, match="zscore_normalize"):
+            nf.record_main(
+                duration=1.0,
+                winsize=1.0,
+                modality=["sensor_power", "hjorth"],
+                combiner=WeightedSumCombiner(weights={"sensor_power": 1.0, "hjorth": 1.0}),
+                zscore_normalize=False,
+                show_raw_signal=False,
+                show_nf_signal=False,
+            )
+    finally:
+        nf.save()
