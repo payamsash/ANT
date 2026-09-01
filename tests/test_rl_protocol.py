@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from mne_rt.protocols import RLProtocol
@@ -51,8 +52,10 @@ class TestRLProtocol:
             epsilon=0.0,
             lr=1e-9,  # near-zero lr → threshold barely moves
         )
-        for _ in range(5):
-            p.evaluate(1.0)
+        # The warmup values need real spread: a constant signal has no
+        # standard deviation, so there is no sigma to express a magnitude in.
+        for i in range(5):
+            p.evaluate(1.0 + 0.01 * i)
         # threshold starts at 0.0, value=1.0 → should cross
         crossed, mag = p.evaluate(1.0)
         assert crossed
@@ -68,12 +71,14 @@ class TestRLProtocol:
             warmup_windows=5,
             history_len=10,
         )
-        # Drive many successes
-        for _ in range(5):
-            p.evaluate(100.0)  # warmup, always crosses
+        # Drive many successes. The values must vary: the adaptive step is
+        # scaled by the running standard deviation, so a constant signal
+        # correctly moves the threshold not at all.
+        for i in range(5):
+            p.evaluate(100.0 + i)  # warmup, always crosses
         thresh_before = p.threshold
-        for _ in range(10):
-            p.evaluate(100.0)  # all successes → hit_rate > target → threshold rises
+        for i in range(10):
+            p.evaluate(100.0 + i)  # all successes → hit_rate > target → threshold rises
         assert p.threshold > thresh_before
 
     def test_reset(self):
@@ -105,3 +110,25 @@ class TestRLProtocol:
     def test_current_threshold_matches_threshold(self):
         p = RLProtocol(initial_threshold=1.5)
         assert p.current_threshold == p.threshold == 1.5
+
+
+@pytest.mark.parametrize("k", [1e-24, 1e-14, 1.0, 1e6])
+def test_rl_protocol_is_scale_invariant(k):
+    """Both the reward magnitude and the adaptive threshold step are in sigma."""
+    values = [1.0, 2.0, 1.5, 3.0, 2.5, 4.0, 3.5, 5.0, 4.5, 6.0]
+
+    def run(scale):
+        p = RLProtocol(
+            initial_threshold=2.0 * scale,
+            direction="up",
+            warmup_windows=3,
+            epsilon=0.0,
+            lr=0.1,
+        )
+        out = [p.evaluate(v * scale) for v in values]
+        return out, p.threshold / scale
+
+    (base, base_thr), (scaled, scaled_thr) = run(1.0), run(k)
+    assert [c for c, _ in scaled] == [c for c, _ in base]
+    np.testing.assert_allclose([m for _, m in scaled], [m for _, m in base], rtol=1e-9)
+    assert scaled_thr == pytest.approx(base_thr, rel=1e-9)

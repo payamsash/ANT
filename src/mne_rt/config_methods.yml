@@ -256,7 +256,7 @@ NF_protocol:
     zscore_threshold: 0.5    # |z| required for reward  (typical: 0.5 – 2.0)
     warmup_windows: 20       # windows used to seed baseline stats (no reward)
     smoothing: 0.0           # EMA coefficient [0, 1)
-    min_std: 1.0e-6          # std floor — prevents divide-by-zero blowup
+    min_std: null            # absolute std floor; null = follow the feature's own scale
 
   PercentileProtocol:
     # Rewards when value exceeds the Nth rolling percentile of recent history.

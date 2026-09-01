@@ -1,5 +1,6 @@
 """Tests for ThresholdProtocol."""
 
+import numpy as np
 import pytest
 
 from mne_rt.protocols import ThresholdProtocol
@@ -55,6 +56,10 @@ def test_defaults():
 
 def test_up_crossing():
     proto = ThresholdProtocol(threshold=1.0, direction="up")
+    # The magnitude is a distance in sigma, so the history needs some spread
+    # before one can be reported; a single observation has none.
+    proto.evaluate(0.5)
+    proto.evaluate(1.5)
     crossed, mag = proto.evaluate(2.0)
     assert crossed
     assert mag > 0.0
@@ -69,6 +74,8 @@ def test_up_no_crossing():
 
 def test_down_crossing():
     proto = ThresholdProtocol(threshold=1.0, direction="down")
+    proto.evaluate(1.5)
+    proto.evaluate(0.8)
     crossed, mag = proto.evaluate(0.5)
     assert crossed
     assert mag > 0.0
@@ -106,8 +113,10 @@ def test_current_threshold_tracks_adaptive_updates():
     proto = ThresholdProtocol(
         threshold=0.0, direction="up", adaptive=True, target_hit_rate=0.5, history_len=10
     )
-    for _ in range(20):
-        proto.evaluate(100.0)  # always crosses -> hit_rate > target -> threshold rises
+    # The adaptive step is scaled by the running spread, so the values must
+    # vary: a constant signal correctly moves the threshold not at all.
+    for i in range(20):
+        proto.evaluate(100.0 + i)  # always crosses -> hit_rate > target -> rises
     assert proto.current_threshold == proto.threshold
     assert proto.current_threshold > 0.0
 
@@ -121,8 +130,8 @@ def test_adaptive_threshold_rises_with_high_hit_rate():
     proto = ThresholdProtocol(
         threshold=0.0, direction="up", adaptive=True, target_hit_rate=0.5, history_len=10
     )
-    for _ in range(15):
-        proto.evaluate(100.0)
+    for i in range(15):
+        proto.evaluate(100.0 + i)
     assert proto.threshold > 0.0
 
 
@@ -178,3 +187,17 @@ def test_repr():
     r = repr(proto)
     assert "ThresholdProtocol" in r
     assert "threshold" in r
+
+
+@pytest.mark.parametrize("k", [1e-24, 1e-14, 1.0, 1e6])
+def test_magnitude_is_scale_invariant(k):
+    """Reward magnitude is a distance in sigma, so it must not depend on units."""
+    values = [1.0, 2.0, 1.5, 3.0, 2.5, 4.0, 3.5, 5.0]
+
+    def run(scale):
+        p = ThresholdProtocol(threshold=2.0 * scale, direction="up")
+        return [p.evaluate(v * scale) for v in values]
+
+    base, scaled = run(1.0), run(k)
+    assert [c for c, _ in scaled] == [c for c, _ in base]
+    np.testing.assert_allclose([m for _, m in scaled], [m for _, m in base], rtol=1e-9)

@@ -229,11 +229,12 @@ def _add_demo_parser(sub):
         default=argparse.SUPPRESS,
         metavar="STD",
         help=(
-            "Floor applied to the running standard deviation, in the same "
-            "raw units as the modality's feature values (default: 1e-6). "
-            "MUST be well below your signal's real magnitude or the floor "
-            "dominates and the threshold line ends up wildly off-scale -- "
-            "e.g. for sensor_power (~1e-13 range), try 1e-15."
+            "Absolute floor on the running standard deviation, in the raw "
+            "units of the feature. Not needed by default: z-scoring adapts to "
+            "the feature's own scale, and a signal with no spread yields a "
+            "z-score of 0. Set this only if you want an absolute floor and "
+            "know your feature's magnitude -- a floor above the real spread "
+            "replaces it and the threshold line ends up wildly off-scale."
         ),
     )
     return p
@@ -486,11 +487,12 @@ def _add_run_parser(sub):
         default=argparse.SUPPRESS,
         metavar="STD",
         help=(
-            "Floor applied to the running standard deviation, in the same "
-            "raw units as the modality's feature values (default: 1e-6). "
-            "MUST be well below your signal's real magnitude or the floor "
-            "dominates and the threshold line ends up wildly off-scale -- "
-            "e.g. for sensor_power (~1e-13 range), try 1e-15."
+            "Absolute floor on the running standard deviation, in the raw "
+            "units of the feature. Not needed by default: z-scoring adapts to "
+            "the feature's own scale, and a signal with no spread yields a "
+            "z-score of 0. Set this only if you want an absolute floor and "
+            "know your feature's magnitude -- a floor above the real spread "
+            "replaces it and the threshold line ends up wildly off-scale."
         ),
     )
     p.add_argument(
@@ -709,7 +711,7 @@ def _build_protocol_from_args(args):
 
     zscore_threshold = getattr(args, "zscore_threshold", 0.5)
     zscore_warmup = getattr(args, "zscore_warmup", 20)
-    zscore_min_std = getattr(args, "zscore_min_std", 1e-6)
+    zscore_min_std = getattr(args, "zscore_min_std", None)
     protocol = ZScoreProtocol(
         direction=direction,
         warmup_windows=zscore_warmup,

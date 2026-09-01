@@ -20,6 +20,8 @@ from typing import Optional, Union
 
 import numpy as np
 
+from mne_rt._stats import usable_std, welford_std, zscore
+
 
 class TransferProtocol:
     """Cross-session transfer NF protocol seeded from a prior-session file.
@@ -164,6 +166,16 @@ class TransferProtocol:
         self._prior_mean: float = float(np.mean(prior_data))
         self._prior_std: float = float(np.std(prior_data, ddof=1))
         self._n_prior: int = len(prior_data)
+        if usable_std(self._prior_std, self._prior_mean) <= 0.0:
+            # Every window would standardise to 0.0, so the subject could never
+            # be rewarded -- and nothing downstream would say why. Better to
+            # refuse here, where there is a filename to name.
+            raise ValueError(
+                f"Prior data for modality {modality!r} in {fname} has no usable "
+                f"spread (std={self._prior_std!r} about a mean of {self._prior_mean!r}, "
+                f"over {self._n_prior} values), so it cannot seed a z-score. Check that "
+                "the prior session recorded this modality correctly."
+            )
 
         # --- Initialise Welford accumulators from prior ----------------------
         self._n_evaluated: int = 0
@@ -240,16 +252,7 @@ class TransferProtocol:
             pass
 
         # --- Compute std and z-score -----------------------------------------
-        total_n = self._welford_n
-        if total_n >= 2:
-            std = max(
-                float(np.sqrt(self._welford_m2 / (total_n - 1))),
-                1e-6,
-            )
-        else:
-            std = max(self._prior_std, 1e-6)
-
-        self._zscore = (smoothed - self._welford_mean) / std
+        self._zscore = zscore(smoothed, self._welford_mean, self._current_std())
 
         # --- Reward criterion ------------------------------------------------
         if self.direction == "up":
@@ -316,19 +319,26 @@ class TransferProtocol:
         """
         return self._welford_mean
 
+    def _current_std(self) -> float:
+        """Running standard deviation, prior-seeded.
+
+        Single source of truth for :meth:`evaluate` and :attr:`std_`, which
+        previously each carried their own copy of this expression — which is
+        why the same floor had to be fixed twice in this file.
+        """
+        if self._welford_n >= 2:
+            std = welford_std(self._welford_m2, self._welford_n)
+        else:
+            std = self._prior_std
+        return usable_std(std, self._welford_mean)
+
     @property
     def std_(self) -> float:
         """Current running standard deviation (prior-seeded).
 
         Before any adaptations this equals :attr:`prior_std`.
         """
-        total_n = self._welford_n
-        if total_n >= 2:
-            return max(
-                float(np.sqrt(self._welford_m2 / (total_n - 1))),
-                1e-6,
-            )
-        return max(self._prior_std, 1e-6)
+        return self._current_std()
 
     @property
     def current_threshold(self) -> float:

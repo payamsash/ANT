@@ -17,6 +17,8 @@ from typing import Optional
 
 import numpy as np
 
+from mne_rt._stats import usable_std
+
 
 class ThresholdProtocol:
     """Threshold-based NF reward protocol with optional adaptive threshold.
@@ -157,9 +159,15 @@ class ThresholdProtocol:
         self._values_history.append(smoothed)
         self._n_evaluated += 1
 
+        # No floor, in either branch. A substituted 1.0 would be 1.0 in the
+        # feature's own units -- twelve orders of magnitude off for band power --
+        # and it feeds the adaptive step directly below.
+        _vals = list(self._values_history)
         running_std = (
-            float(np.std(list(self._values_history))) if len(self._values_history) > 1 else 1.0
-        ) or 1.0
+            usable_std(float(np.std(_vals, ddof=1)), float(np.mean(_vals)))
+            if len(_vals) > 1
+            else 0.0
+        )
 
         if self.adaptive and len(self._history) >= 10:
             step = self.adapt_rate * running_std
@@ -168,8 +176,11 @@ class ThresholdProtocol:
             else:
                 self._threshold -= step * (self.hit_rate - self.target_hit_rate)
 
-        if crossed:
-            magnitude = abs(smoothed - self._threshold) / (running_std + 1e-6)
+        # `running_std` was already vetted against the data's own mean above.
+        # Re-testing it against the threshold would zero the magnitude whenever
+        # the threshold is set on a different scale from the feature.
+        if crossed and running_std > 0.0:
+            magnitude = abs(smoothed - self._threshold) / running_std
         else:
             magnitude = 0.0
 

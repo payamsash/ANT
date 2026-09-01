@@ -17,6 +17,8 @@ from typing import Optional
 
 import numpy as np
 
+from mne_rt._stats import usable_std
+
 
 class RLProtocol:
     """Adaptive NF protocol with reinforcement-learning threshold updates.
@@ -190,12 +192,13 @@ class RLProtocol:
         self._n_evaluated += 1
         self._value_history.append(smoothed)
 
-        # Running std from rolling window (floor at 1e-6)
-        running_std: float
+        # Running std from the rolling window. No floor: a degenerate spread
+        # gives 0.0, which freezes the adaptive threshold below instead of
+        # teleporting it by an arbitrary constant.
+        running_std: float = 0.0
         if len(self._value_history) > 1:
-            running_std = max(float(np.std(list(self._value_history))), 1e-6)
-        else:
-            running_std = 1e-6
+            vals = list(self._value_history)
+            running_std = usable_std(float(np.std(vals, ddof=1)), float(np.mean(vals)))
 
         # Warmup: accumulate statistics, issue no rewards, update no threshold
         if self._n_evaluated <= self.warmup_windows:
@@ -231,7 +234,12 @@ class RLProtocol:
                     self._threshold -= update
 
         # --- Magnitude -------------------------------------------------------
-        magnitude = abs(smoothed - self._threshold) / (running_std + 1e-6) if crossed else 0.0
+        # Divide by the std already vetted against the data's own mean; vetting
+        # it a second time against the threshold would zero every magnitude
+        # whenever the threshold sits on a different scale from the feature.
+        magnitude = (
+            abs(smoothed - self._threshold) / running_std if crossed and running_std > 0.0 else 0.0
+        )
         return crossed, magnitude
 
     def reset(self) -> None:

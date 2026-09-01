@@ -47,6 +47,8 @@ import math
 import warnings
 from typing import Any, Optional
 
+from mne_rt._stats import usable_std, zscore
+
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
@@ -200,8 +202,21 @@ class GeometricMeanCombiner(FeatureCombiner):
     weights : dict[str, float] | None, default None
         Optional per-feature exponents in the weighted geometric mean.
         ``None`` applies equal weighting (all exponents = 1).
-    floor : float, default 1e-9
-        Minimum value each input is clipped to before ``log``.
+    floor : float | None, default None
+        Absolute value each input is clipped to before taking its logarithm.
+        ``None`` clips nothing: a non-positive feature (for which the geometric
+        mean is undefined) is dropped from the product instead, and if none
+        survive the result is ``0.0``.
+
+        Pass a float only if you want the clipping behaviour and know your
+        features' magnitude. A floor above their real values replaces them —
+        with the pre-1.2.0 default of ``1e-9`` against band power of ~1e-14,
+        every input clipped to the floor and the result was the constant
+        ``1e-9`` regardless of the data.
+
+        .. versionchanged:: 1.2.0
+            Default changed from ``1e-9`` to ``None``. An explicit float keeps
+            its previous meaning exactly.
 
     Examples
     --------
@@ -231,11 +246,11 @@ class GeometricMeanCombiner(FeatureCombiner):
         self,
         features: list[str],
         weights: Optional[dict[str, float]] = None,
-        floor: float = 1e-9,
+        floor: Optional[float] = None,
     ) -> None:
         super().__init__(features=features)
         self.weights = weights
-        self.floor = floor
+        self.floor: Optional[float] = floor
 
     def combine(self, values: dict[str, float]) -> float:
         """Return the weighted geometric mean of available feature values."""
@@ -246,14 +261,30 @@ class GeometricMeanCombiner(FeatureCombiner):
             if feat not in values:
                 continue
             w = self.weights.get(feat, 1.0) if self.weights else 1.0
-            x = max(values[feat], self.floor)
+            x = values[feat]
+            if self.floor is not None:
+                x = max(x, self.floor)
+            elif x <= 0.0:
+                # log() is undefined here, and clamping to a constant would make
+                # the result that constant. A positive value of any magnitude is
+                # fine, so only non-positive ones are dropped.
+                continue
             log_sum += w * math.log(x)
             weight_sum += w
 
         if weight_sum == 0.0:
+            # Distinguish the two ways this happens: a naming mistake, or data
+            # the geometric mean cannot describe. They need different fixes.
+            present = [f for f in self.features if f in values]
+            if present:
+                detail = (
+                    f"every present feature ({present}) was non-positive, and the "
+                    "geometric mean is undefined there"
+                )
+            else:
+                detail = f"none of the specified features ({self.features}) were present"
             warnings.warn(
-                f"{type(self).__name__}: none of the specified features "
-                f"({self.features}) were present in values — returning 0.0.",
+                f"{type(self).__name__}: {detail} — returning 0.0.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -289,8 +320,15 @@ class ZScoredNormCombiner(FeatureCombiner):
 
     Notes
     -----
-    If a feature's standard deviation is effectively zero (constant signal),
-    it is floored at ``1e-9`` to prevent division-by-zero.
+    A feature with no usable spread (a constant signal) contributes ``0.0``
+    rather than being divided by a floor: it has no z-score to give.  Feature
+    magnitude is irrelevant — a band-power feature at ~1e-14 normalises to the
+    same range as a connectivity index at ~1.
+
+    .. versionchanged:: 1.2.0
+        Standard deviations were previously floored at ``1e-9``, which for
+        power-like features replaced the real spread and left the normalised
+        output orders of magnitude too small.
 
     Examples
     --------
@@ -308,6 +346,9 @@ class ZScoredNormCombiner(FeatureCombiner):
 
     def __init__(self, features: list[str], warmup: int = 30) -> None:
         super().__init__(features=features)
+        if warmup < 2:
+            # The baseline variance is computed with ddof=1.
+            raise ValueError(f"warmup must be >= 2, got {warmup}")
         self.warmup = warmup
         self._buf: dict[str, list[float]] = {f: [] for f in features}
         self._mean: dict[str, float] = {}
@@ -339,9 +380,11 @@ class ZScoredNormCombiner(FeatureCombiner):
                 for feat in self.features:
                     buf = self._buf[feat]
                     mu = sum(buf) / len(buf)
-                    variance = sum((x - mu) ** 2 for x in buf) / len(buf)
+                    # ddof=1: a finite baseline sample used to standardise
+                    # future, unseen values.
+                    variance = sum((x - mu) ** 2 for x in buf) / (len(buf) - 1)
                     self._mean[feat] = mu
-                    self._std[feat] = max(math.sqrt(variance), 1e-9)
+                    self._std[feat] = usable_std(math.sqrt(variance), mu)
                 self._buf.clear()
                 self._warmed_up = True
             else:
@@ -349,7 +392,7 @@ class ZScoredNormCombiner(FeatureCombiner):
 
         # Post-warmup: z-score each present feature then return normalised norm
         z_scores = [
-            (values[f] - self._mean[f]) / self._std[f]
+            zscore(values[f], self._mean[f], self._std[f])
             for f in self.features
             if f in values and f in self._mean
         ]

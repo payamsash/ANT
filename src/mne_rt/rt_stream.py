@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import math
 import queue as _queue
 import threading
 import time
@@ -57,6 +58,7 @@ from pyqtgraph.Qt import QtWidgets
 
 from mne_rt._logging import logger, set_log_level, verbose
 from mne_rt._naming import MODALITY_SEP, osc_address_name, parse_modality, split_modality
+from mne_rt._stats import ema_variance, zscore
 from mne_rt.combiners import GeometricMeanCombiner, ZScoredNormCombiner
 from mne_rt.decoding import RTDecode
 from mne_rt.modalities import ModalityMixin
@@ -1096,10 +1098,29 @@ class RTStream(ModalityMixin):
             warmup windows.  If ``zscore_alpha > 0`` the statistics are
             updated after every window with an exponential moving average
             so the normaliser slowly tracks drift.
+
+            The estimate is scale-free: σ is used exactly as observed, whatever
+            the feature's units, so band power (~1e-13 V²/Hz) and a connectivity
+            index (~1) both come out around 1. A feature with no spread at all
+            has no z-score and yields ``0.0``. When this is enabled the plot's
+            display scales become 1.0, since the traces are no longer in native
+            units.
+
+            .. versionchanged:: 1.2.0
+                Previously σ was floored at ``1e-6``, which for power-like
+                features replaced the real spread and made z-scores several
+                orders of magnitude too small.
         zscore_warmup : int, default 10
             Number of windows to collect before activating normalisation.
             The mean and standard deviation of these windows are used as
             the initial statistics.
+
+            Longer is better: σ estimated from a handful of windows carries
+            its own sampling error, and the first analysis window of a run
+            tends to read low (the acquisition buffer is still filling), which
+            inflates σ and shrinks every later z-score. Measured on synthetic
+            EEG band power, the spread of the resulting trace was ~0.5 at
+            ``zscore_warmup=8`` and ~1.0 at 60.
         zscore_alpha : float, default 0.0
             EMA forgetting factor for updating μ and σ each window.
             ``0.0`` freezes statistics after warmup (recommended for most
@@ -1388,6 +1409,13 @@ class RTStream(ModalityMixin):
         for s in specs:
             if s.name not in scales_dict and s.base in scales_dict:
                 scales_dict[s.name] = scales_dict[s.base]
+        if zscore_normalize:
+            # The traces are no longer in native units — a z-score sits around 1
+            # whatever the feature. Dividing one by a 1e-12 band-power scale
+            # would put it twelve orders off-screen. During the warmup windows
+            # the raw value is still passed through, so the trace sits flat near
+            # the axis origin until normalisation engages.
+            scales_dict = dict.fromkeys(scales_dict, 1.0)
         # NFPlot looks every displayed modality up in scales_dict, so the
         # combined trace needs an entry of its own.
         if combiner is not None:
@@ -1426,10 +1454,14 @@ class RTStream(ModalityMixin):
                     warn(
                         "GeometricMeanCombiner takes the log of each value, so it needs "
                         "positive inputs, but z-scores are negative in roughly half of all "
-                        "windows. Those are floored to `floor` and log(1e-9) collapses the "
-                        "combined value by orders of magnitude. Use ZScoredNormCombiner to "
-                        "mix features of different scale, or keep zscore_normalize=False "
-                        "and feed GeometricMeanCombiner strictly positive features.",
+                        "windows. Each negative feature is dropped from that window's "
+                        "product (or clipped, if you set `floor`), so the combined trace "
+                        "is a geometric mean over a different subset of features from one "
+                        "window to the next — a discontinuous signal that is hard to "
+                        "interpret and harder to reward — and 0.0 whenever every feature "
+                        "is negative. Use ZScoredNormCombiner to mix features of different "
+                        "scale, or keep zscore_normalize=False and feed "
+                        "GeometricMeanCombiner strictly positive features.",
                         RuntimeWarning,
                         stacklevel=2,
                     )
@@ -1589,30 +1621,42 @@ class RTStream(ModalityMixin):
         )
 
         # ---- Z-score normalisation state ----
+        # The warmup buffer is dropped once its statistics are taken; `_z_n` is
+        # the window counter, kept separately because the combiner warm-gate
+        # below reads it after the buffer is gone. Variance rather than standard
+        # deviation, so the adaptive update composes correctly.
         _z_buf: dict[str, list] = {s.name: [] for s in specs}
+        _z_n: dict[str, int] = {s.name: 0 for s in specs}
         _z_mean: dict[str, float] = {}
-        _z_std: dict[str, float] = {}
+        _z_var: dict[str, float] = {}
 
         def _apply_zscore(mod: str, val: float) -> float:
             if not zscore_normalize:
                 return val
-            buf = _z_buf[mod]
-            buf.append(float(val))
-            n = len(buf)
+            val = float(val)
+            _z_n[mod] += 1
+            n = _z_n[mod]
             if n < zscore_warmup:
+                _z_buf[mod].append(val)
                 return val  # pass-through during warmup
             if n == zscore_warmup:
+                buf = _z_buf[mod]
+                buf.append(val)
                 arr = np.array(buf, dtype=float)
                 _z_mean[mod] = float(arr.mean())
-                _z_std[mod] = max(float(arr.std()), 1e-6)
+                # ddof=1: these statistics are estimated from a finite baseline
+                # and used to standardise future, unseen values.
+                _z_var[mod] = float(arr.var(ddof=1))
+                _z_buf[mod] = []  # dead from here on; `_z_n` carries the count
             elif zscore_alpha > 0.0:
-                m_prev = _z_mean[mod]
-                _z_mean[mod] += zscore_alpha * (val - m_prev)
-                _z_std[mod] = max(
-                    _z_std[mod] * (1.0 - zscore_alpha) + zscore_alpha * abs(val - m_prev),
-                    1e-6,
-                )
-            return (val - _z_mean[mod]) / _z_std[mod]
+                # One `delta`, taken before the mean moves, so mean and variance
+                # advance on the same step.
+                delta = val - _z_mean[mod]
+                _z_var[mod] = ema_variance(_z_var[mod], delta, zscore_alpha)
+                _z_mean[mod] += zscore_alpha * delta
+            # No floor: a degenerate spread yields 0.0 rather than a value
+            # divided by an arbitrary constant. See mne_rt._stats.
+            return zscore(val, _z_mean[mod], math.sqrt(_z_var[mod]))
 
         # ---- Shared artifact-correction helper ----
 
@@ -1775,9 +1819,7 @@ class RTStream(ModalityMixin):
                     # normalisation engaged, fitting any attached protocol's
                     # baseline on meaningless numbers. Hold at 0.0 until every
                     # feature is normalised, as ZScoredNormCombiner does.
-                    _warm = not zscore_normalize or all(
-                        len(_z_buf[m]) >= zscore_warmup for m in mods
-                    )
+                    _warm = not zscore_normalize or all(_z_n[m] >= zscore_warmup for m in mods)
                     if _warm:
                         try:
                             _mixed = float(combiner.combine({m: nf_data[m][-1] for m in mods}))

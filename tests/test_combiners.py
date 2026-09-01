@@ -141,11 +141,15 @@ class TestGeometricMeanCombiner:
 
 class TestZScoredNormCombiner:
     def _warmed_up_combiner(self, features, warmup=5, baseline=1.0):
-        """Return a combiner that has already completed warmup."""
+        """Return a combiner that has already completed warmup.
+
+        The warmup samples must have real spread: a constant baseline has no
+        standard deviation, so every later value standardises to 0.0.
+        """
         c = ZScoredNormCombiner(features=features, warmup=warmup)
-        vals = {f: baseline for f in features}
-        for _ in range(warmup):
-            c.combine(vals)
+        for i in range(warmup):
+            offset = 0.1 * (1 if i % 2 else -1)
+            c.combine({f: baseline + offset for f in features})
         return c
 
     def test_returns_zero_during_warmup(self):
@@ -154,29 +158,23 @@ class TestZScoredNormCombiner:
             assert c.combine({"a": 1.0, "b": 2.0}) == 0.0
 
     def test_nonzero_after_warmup(self):
-        c = ZScoredNormCombiner(features=["a"], warmup=5)
-        vals = {"a": 1.0}
-        for _ in range(5):
-            c.combine(vals)
+        c = self._warmed_up_combiner(["a"], warmup=5)
         # Feed a value far from baseline; should be non-zero
         result = c.combine({"a": 1000.0})
         assert result > 0.0
 
     def test_baseline_value_near_zero(self):
         """At-baseline input → all z-scores ≈ 0 → norm ≈ 0."""
-        c = ZScoredNormCombiner(features=["a", "b"], warmup=20)
-        for _ in range(20):
-            c.combine({"a": 5.0, "b": 3.0})
-        result = c.combine({"a": 5.0, "b": 3.0})
+        c = self._warmed_up_combiner(["a", "b"], warmup=20, baseline=5.0)
+        result = c.combine({"a": 5.0, "b": 5.0})
         assert abs(result) < 0.1
 
     def test_normalised_by_sqrt_n(self):
         """Equal unit z-scores across n features → mixed == 1.0."""
         c = ZScoredNormCombiner(features=["a", "b", "c"], warmup=4)
-        # Inject warmup data with std=1 around mean=0
-        import math as _math
-
-        samples = [-1.0, 1.0, -1.0, 1.0]
+        # Warmup data with *sample* std (ddof=1) of exactly 1.0 about mean 0:
+        # for [-a, a, -a, a] the sample variance is 4a^2/3, so a = sqrt(3)/2.
+        samples = [-0.8660254, 0.8660254, -0.8660254, 0.8660254]
         for s in samples:
             c.combine({"a": s, "b": s, "c": s})
         # Now feed exactly mean + 1 std for each feature
@@ -257,3 +255,62 @@ class TestLearnedCombiner:
         c = LearnedCombiner(features=["a"], estimator=_ConstantEstimator(3.14))
         result = c.combine({"a": 0.0})
         assert isinstance(result, float)
+
+
+# ------------------------------------------------------------------
+# Scale-free standardisation
+# ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("k", [1e-24, 1e-14, 1.0, 1e6])
+def test_zscored_norm_combiner_is_scale_invariant(k):
+    """Scaling every feature by k must leave the combined value unchanged.
+
+    It normalises each feature internally, and is the combiner record_main
+    recommends for mixing features of different scale — so an absolute std
+    floor inside it defeated the one job it has.
+    """
+    samples = [1.0, 2.0, 3.0, 4.0, 5.0]
+
+    def run(scale):
+        c = ZScoredNormCombiner(features=["a", "b"], warmup=len(samples))
+        for s in samples:
+            c.combine({"a": s * scale, "b": (s + 1) * scale})
+        return c.combine({"a": 6.0 * scale, "b": 7.0 * scale})
+
+    assert run(k) == pytest.approx(run(1.0), rel=1e-9)
+
+
+def test_zscored_norm_combiner_keeps_native_scale_features():
+    """A band-power-scale feature must produce an O(1) normalised value."""
+    c = ZScoredNormCombiner(features=["a"], warmup=5)
+    for s in [1.0, 2.0, 3.0, 4.0, 5.0]:
+        c.combine({"a": s * 1e-13})
+    result = c.combine({"a": 8.0e-13})
+    assert 1.0 < result < 10.0  # ~1e-4 under the old 1e-9 floor
+
+
+def test_geometric_mean_keeps_small_positive_values():
+    """Every band-power input used to clip to the floor, giving a constant."""
+    c = GeometricMeanCombiner(features=["a", "b"])
+    low = c.combine({"a": 1e-14, "b": 4e-14})
+    high = c.combine({"a": 4e-14, "b": 16e-14})
+    assert low == pytest.approx(2e-14, rel=1e-9)  # sqrt(1e-14 * 4e-14)
+    assert high == pytest.approx(4 * low, rel=1e-9)  # responds to the data
+
+
+def test_geometric_mean_skips_non_positive_by_default():
+    """log() is undefined there, and clamping would make the result the clamp."""
+    c = GeometricMeanCombiner(features=["a", "b"])
+    # 'b' is dropped; the result is the geometric mean of 'a' alone.
+    assert c.combine({"a": 4.0, "b": -1.0}) == pytest.approx(4.0)
+    with pytest.warns(RuntimeWarning, match="was non-positive"):
+        assert c.combine({"a": 0.0, "b": -1.0}) == 0.0
+    # A genuine naming mistake still reports itself as one.
+    with pytest.warns(RuntimeWarning, match="none of the specified features"):
+        assert c.combine({"other": 1.0}) == 0.0
+
+
+def test_geometric_mean_explicit_floor_keeps_old_clamping():
+    c = GeometricMeanCombiner(features=["a"], floor=1e-9)
+    assert c.combine({"a": 1e-14}) == pytest.approx(1e-9)

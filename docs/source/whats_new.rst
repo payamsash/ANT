@@ -3,6 +3,86 @@
 What's new
 ==========
 
+.. _changes_1_2_0:
+
+Version 1.2.0
+--------------
+
+*unreleased*
+
+Numeric output changes
+^^^^^^^^^^^^^^^^^^^^^^
+
+**Standardisation no longer depends on the units of your feature.** If you use
+``zscore_normalize=True``, :class:`~mne_rt.protocols.ZScoreProtocol`,
+:class:`~mne_rt.protocols.TransferProtocol`,
+:class:`~mne_rt.protocols.RLProtocol`,
+:class:`~mne_rt.protocols.ThresholdProtocol` or
+:class:`~mne_rt.ZScoredNormCombiner` on a power-like modality, **the numbers
+this version produces differ from 1.1.0 — the previous ones were wrong.**
+
+Every running standard deviation was floored with an absolute constant
+(``1e-6``, or ``1e-9`` in the combiners). EEG band power is ~1e-12 V²/Hz and MEG
+~1e-24 T²/Hz, so for those features the floor did not *guard* the standard
+deviation, it *replaced* it: measured on synthetic EEG band power, a z-score
+that should have been 1.0 came out as 7.9e-9, and on MEG, 9.0e-21. Rewards
+therefore almost never fired, and the adaptive threshold line sat
+indistinguishably close to the mean. Features of order 1 — connectivity,
+entropy, laterality, ``erd_ers`` — were unaffected, which is why this went
+unnoticed.
+
+There is now no floor. A standard deviation is used exactly as observed,
+whatever its magnitude, and the only special case is a signal with *no* spread,
+which has no z-score and yields ``0.0`` — no crossing, no reward. Affected
+modalities: ``sensor_power``, ``individual_peak_power``, ``source_graph`` and,
+marginally, ``scp``.
+
+Two consequences worth expecting:
+
+- ``current_threshold`` moves. On ``sensor_power`` it was ``mean ± 5e-7`` — far
+  outside the data — and is now a real ``mean ± zscore_threshold × σ`` boundary,
+  so the dashed line on :class:`~mne_rt.viz.NFPlot` finally sits where the
+  rewards are.
+- With ``zscore_normalize=True`` the plot's display scales are now ``1.0``,
+  since the traces are in standard deviations rather than native units. The
+  raw value is still passed through during the warmup windows, so the trace
+  sits flat near the axis origin until normalisation engages.
+
+``min_std`` (on :class:`~mne_rt.protocols.ZScoreProtocol` and ``--zscore-min-std``)
+now defaults to ``None``, meaning no floor. Passing a float keeps its old
+meaning exactly, so an existing script that set one explicitly is unaffected.
+The CLI help and :doc:`cli` previously advised choosing a floor below your
+signal's magnitude (``1e-15`` for ``sensor_power``); that advice is obsolete and
+has been removed — passing a floor now *opts back into* the old behaviour.
+
+Bug fixes
+^^^^^^^^^
+
+- **The adaptive z-score tracked the wrong statistic.** With ``zscore_alpha >
+  0``, :meth:`~mne_rt.RTStream.record_main` exponentially averaged
+  ``abs(value - mean)`` — the mean absolute deviation, ≈0.798σ for Gaussian
+  input — into a variable seeded with a standard deviation, inflating every
+  z-score by roughly 25% on top of the floor problem. It now uses the standard
+  EMA-weighted variance recursion. The mean and the variance are also advanced
+  from the same ``delta``; previously the variance used the pre-update mean
+  while the returned z-score used the post-update one.
+- Standard deviations are now sample (``ddof=1``) throughout. Two of the three
+  estimators already were, so a :class:`~mne_rt.protocols.ZScoreProtocol`
+  threshold line was drawn over a trace standardised by a different convention —
+  a 5.4% mismatch at the default warmup, and 41% at ``zscore_warmup=2``.
+- :class:`~mne_rt.GeometricMeanCombiner` clipped every input to ``floor`` before
+  taking its logarithm. For band power (~1e-14) against the ``1e-9`` default
+  that meant *all* inputs clipped, so the result was the constant ``1e-9``
+  regardless of the data. ``floor`` now defaults to ``None``: positive values of
+  any magnitude pass through, and a non-positive one — for which the geometric
+  mean is undefined — is dropped from the product rather than clamped.
+- :class:`~mne_rt.protocols.TransferProtocol` now rejects a prior recording with
+  zero variance at construction, naming the file. Such a prior cannot seed a
+  z-score, and under the new rule it would otherwise produce no reward for an
+  entire session with nothing to indicate why.
+- :class:`~mne_rt.ZScoredNormCombiner` now requires ``warmup >= 2``, which its
+  sample-variance baseline needs.
+
 .. _changes_1_1_0:
 
 Version 1.1.0
