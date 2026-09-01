@@ -59,6 +59,25 @@ def qt_app():
     yield app
 
 
+# These tests are stable on their own — this file alone passes repeatedly — but
+# aborted intermittently in CI when run at the end of the full suite, on every
+# Python version. CI therefore runs this file in its own pytest process.
+#
+# To reproduce the crash deliberately, add:
+#
+#     @pytest.fixture(autouse=True)
+#     def _drain_qt_events(qt_app):
+#         yield
+#         qt_app.processEvents()
+#
+# and run `QT_QPA_PLATFORM=offscreen pytest tests/test_viz_plots.py`: it
+# segfaults every run, part-way through TestEpochPlot. Selecting the same test
+# classes explicitly by node id passes, and no individual test crashes alone, so
+# the fault is in the ordering of accumulated Qt widget destruction rather than
+# in any one test. Do not commit that fixture — it turns an intermittent failure
+# into a certain one — but it is the handle to use when fixing the root cause.
+
+
 # NOTE: draining the Qt event queue after every test — an autouse fixture doing
 # `qt_app.processEvents()` — makes the intermittent CI abort in this file
 # reproduce *deterministically*, including locally under
