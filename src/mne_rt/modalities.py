@@ -22,6 +22,9 @@ New modalities added:
 - ``laterality``       — inter-hemispheric power asymmetry index
 - ``hjorth``           — mean of Hjorth mobility and complexity (no FFT)
 - ``spectral_centroid``— frequency-weighted centre-of-mass of the PSD within a band
+- ``decode``           — fitted :class:`~mne_rt.RTDecode` classifier queried
+  once per window (``self.decoder``, set via
+  :meth:`~mne_rt.RTStream.set_decoder`)
 """
 
 from __future__ import annotations
@@ -70,7 +73,7 @@ class ModalityMixin:
       inside a thread-pool worker.  Decorated with :func:`~ant.tools.timed` so
       it returns ``(value, elapsed_seconds)``.
 
-    .. rubric:: Supported modalities (20 total)
+    .. rubric:: Supported modalities (21 total)
 
 
     **Sensor-space power & time-domain**
@@ -88,6 +91,12 @@ class ModalityMixin:
     **Source-space**
 
     ``source_power``, ``source_connectivity``, ``source_graph``
+
+    **Decoding**
+
+    ``decode`` — single-trial classification via a fitted
+    :class:`~mne_rt.RTDecode` instance (see
+    :meth:`~mne_rt.RTStream.set_decoder`)
 
     Notes
     -----
@@ -1050,3 +1059,53 @@ class ModalityMixin:
         conn_den = float(np.squeeze(con_den.get_data(output="dense"))[indices_den].mean())
 
         return float(conn_num / (conn_den + 1e-30))
+
+    # ------------------------------------------------------------------
+    # Decoding
+    # ------------------------------------------------------------------
+
+    def _decode_prep(self) -> dict:
+        decoder = getattr(self, "decoder", None)
+        if decoder is None:
+            raise RuntimeError(
+                "The 'decode' modality requires a fitted RTDecode instance. "
+                "Call set_decoder(RTDecode(...).fit(X, y)) before record_main()."
+            )
+        if not decoder.fitted:
+            raise RuntimeError(
+                "The RTDecode instance passed to set_decoder() must be "
+                "fit() on calibration epochs before record_main()."
+            )
+        if not decoder._supports_proba:
+            raise AttributeError(
+                f"The 'decode' modality requires predict_proba(); the estimator "
+                f"{type(decoder.estimator).__name__} attached via set_decoder() "
+                "does not implement it. Pass an estimator that does, e.g. "
+                "LogisticRegression or SVC(probability=True)."
+            )
+
+        class_index = self.params["class_index"]
+        n_classes = len(decoder.classes_)
+        if not (0 <= class_index < n_classes):
+            raise ValueError(
+                f"`class_index={class_index}` is out of range for the fitted "
+                f"decoder, which has {n_classes} classes "
+                f"(decoder.classes_={list(decoder.classes_)!r})."
+            )
+
+        picks = getattr(self, "picks", None)
+        n_expected = len(picks) if picks is not None else len(self.rec_info["ch_names"])
+        if decoder.n_channels_ != n_expected:
+            raise ValueError(
+                f"The fitted decoder expects {decoder.n_channels_} channels but "
+                f"the current session provides {n_expected} (picks={picks!r}). "
+                "Re-fit RTDecode on calibration data matching this session's "
+                "channel selection before record_main()."
+            )
+
+        return {"decoder": decoder, "class_index": class_index}
+
+    @timed
+    def _decode(self, data: np.ndarray, decoder, class_index: int) -> float:
+        """Probability of ``decoder.classes_[class_index]`` for one window."""
+        return float(decoder.predict_proba(data)[class_index])

@@ -186,6 +186,15 @@ NF_modality:
     alpha: 1
     beta: 1
 
+  # ── Decoding ────────────────────────────────────────────────────────────────
+
+  decode:
+    # Probability of decoder.classes_[class_index] from a fitted RTDecode
+    # instance, each window. Requires nf.set_decoder(RTDecode(...).fit(X, y))
+    # before record_main(). Channel count/order must match the calibration
+    # data the decoder was fit on.
+    class_index: 1           # which class probability to report (0-based)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # NF_protocol

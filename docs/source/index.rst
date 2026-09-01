@@ -107,6 +107,13 @@ Key capabilities
      - **CLI** — launch full real-time M/EEG sessions with a single
        ``mne-rt run`` command, driven by a YAML config file. See :doc:`cli`.
 
+   * - ✔
+     - **Real-time decoding** — :class:`~mne_rt.RTDecode` wraps an
+       :mod:`mne.decoding` (CSP, or Scaler + Vectorizer) and scikit-learn
+       classifier pipeline, fit offline on labelled calibration epochs and
+       queried once per acquisition window as the ``"decode"`` NF modality.
+       See :doc:`decoding`.
+
 .. toctree::
    :hidden:
    :caption: Getting started
@@ -123,6 +130,7 @@ Key capabilities
    cli
    denoising
    modalities
+   decoding
    protocols
    whats_new
 

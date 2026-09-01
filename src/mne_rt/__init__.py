@@ -10,6 +10,10 @@ Main entry points
     feature extraction, and visualisation.
 :class:`~mne_rt.RTEpochs`
     Event-triggered epoch accumulator with per-trial feature statistics.
+:class:`~mne_rt.RTDecode`
+    Fit-offline / predict-online single-trial decoder built from
+    :mod:`mne.decoding`, wired into :class:`~mne_rt.RTStream` as the
+    ``"decode"`` modality via :meth:`~mne_rt.RTStream.set_decoder`.
 :class:`~mne_rt.viz.NFPlot`
     Scrolling multi-channel real-time NF signal monitor (Qt + pyqtgraph).
 :class:`~mne_rt.viz.RawPlot`
@@ -55,6 +59,7 @@ from mne_rt.combiners import (  # noqa: F401 — public API
     WeightedSumCombiner,
     ZScoredNormCombiner,
 )
+from mne_rt.decoding import RTDecode
 from mne_rt.lsl_output import LSLSender
 from mne_rt.osc import OSCSender
 from mne_rt.protocols import (
@@ -86,6 +91,7 @@ __all__ = [
     "RTStream",
     "ArrayStream",
     "RTEpochs",
+    "RTDecode",
     "BrainPlot",
     "NFPlot",
     "RawPlot",

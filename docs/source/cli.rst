@@ -3,7 +3,7 @@
 CLI
 ===
 
-MNE-RT provides an ``mne-rt`` shell command with five sub-commands.
+MNE-RT provides an ``mne-rt`` shell command with six sub-commands.
 
 .. code-block:: text
 
@@ -12,6 +12,7 @@ MNE-RT provides an ``mne-rt`` shell command with five sub-commands.
     mne-rt info
     mne-rt demo         [options]
     mne-rt demo-erp     [options]
+    mne-rt demo-decode  [options]
     mne-rt baseline     --subject ID --subjects-dir DIR [options]
     mne-rt run          --subject ID --subjects-dir DIR --duration N [options]
 
@@ -180,6 +181,53 @@ Options:
    * - ``--no-tfr``
      - —
      - Disable the :class:`~mne_rt.viz.TFRPlot` (Morlet wavelet heatmaps)
+
+``mne-rt demo-decode``
+-----------------------
+
+Load PhysioNet EEG Motor Movement/Imagery data, fit an
+:class:`~mne_rt.RTDecode` classifier (CSP + logistic regression) on left- vs.
+right-hand imagery epochs, then stream held-out epochs through
+:meth:`~mne_rt.RTStream.connect_to_array` and classify them window-by-window
+in real time as the ``"decode"`` NF modality. Prints cross-validated offline
+accuracy plus a live segment-by-segment accuracy report comparing each
+streamed window's decoded probability against the true condition.
+Downloads ~15 MB of PhysioNet data on first run.
+
+.. code-block:: console
+
+    $ mne-rt demo-decode                        # default subject, 10 held-out epochs/class
+    $ mne-rt demo-decode --subject 3             # try a different PhysioNet subject
+    $ mne-rt demo-decode --n-test-epochs 5        # fewer held-out epochs streamed live
+    $ mne-rt demo-decode --no-nf                 # headless, no NFPlot window
+
+Options:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 15 45
+
+   * - Flag
+     - Default
+     - Description
+   * - ``--subject``
+     - 1
+     - PhysioNet EEGBCI subject number
+   * - ``--n-test-epochs``
+     - 10
+     - Held-out epochs per class streamed live for the real-time demo
+   * - ``--winsize``
+     - 2.0
+     - Decode window length in seconds; must match the CSP fit window
+   * - ``--n-components``
+     - 4
+     - Number of CSP spatial filters
+   * - ``--no-nf``
+     - —
+     - Disable the scrolling real-time NF signal plot (:class:`~mne_rt.viz.NFPlot`)
+   * - ``--no-save``
+     - —
+     - Skip saving session data at the end of the demo
 
 ``mne-rt baseline``
 --------------------

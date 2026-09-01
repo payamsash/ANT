@@ -16,6 +16,15 @@ Core
    mne_rt.RTEpochs
    mne_rt.ArrayStream
 
+Decoding
+--------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+   mne_rt.RTDecode
+
 Visualisation
 -------------
 

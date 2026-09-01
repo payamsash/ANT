@@ -54,6 +54,7 @@ from mne_lsl.stream import StreamLSL as Stream
 from pyqtgraph.Qt import QtWidgets
 
 from mne_rt._logging import logger, set_log_level, verbose
+from mne_rt.decoding import RTDecode
 from mne_rt.modalities import ModalityMixin
 from mne_rt.tools import (
     _compute_inv_operator,
@@ -889,6 +890,35 @@ class RTStream(ModalityMixin):
         self.raw_baseline = raw_baseline
         self.compute_inv_operator()
 
+    def set_decoder(self, decoder: RTDecode) -> None:
+        """Attach a fitted decoder for the ``"decode"`` modality.
+
+        Parameters
+        ----------
+        decoder : instance of RTDecode
+            Must already be fit (see :meth:`~mne_rt.RTDecode.fit`) on
+            labelled calibration epochs before being attached here.
+
+        See Also
+        --------
+        mne_rt.RTDecode : Fit-offline / predict-online single-trial decoder.
+
+        Examples
+        --------
+        >>> decoder = RTDecode(info=epochs_info).fit(X_cal, y_cal)  # doctest: +SKIP
+        >>> nf.set_decoder(decoder)  # doctest: +SKIP
+        >>> nf.record_main(modality=["decode"])  # doctest: +SKIP
+        """
+        if not isinstance(decoder, RTDecode):
+            raise TypeError(
+                f"`decoder` must be an instance of RTDecode, got {type(decoder).__name__}."
+            )
+        if not decoder.fitted:
+            raise RuntimeError(
+                "`decoder` must be fit() on calibration epochs before set_decoder()."
+            )
+        self.decoder = decoder
+
     @verbose
     def record_main(
         self,
@@ -953,7 +983,8 @@ class RTStream(ModalityMixin):
             ``"instantaneous_phase"``, ``"scp"``, ``"peak_alpha_freq"``,
             ``"sensor_connectivity"``, ``"cfc_sensor"``, ``"sensor_graph"``,
             ``"connectivity_ratio"``,
-            ``"source_power"``, ``"source_connectivity"``, ``"source_graph"``.
+            ``"source_power"``, ``"source_connectivity"``, ``"source_graph"``,
+            ``"decode"`` (requires :meth:`set_decoder` beforehand).
         picks : str | list of str | None, default None
             Channel selection passed to the LSL stream.  ``None`` uses all
             available channels.  Must be ``None`` for source-space modalities.
@@ -1214,6 +1245,7 @@ class RTStream(ModalityMixin):
             "hjorth": 5.0,
             "spectral_centroid": 5.0,
             "scp": 50e-6,
+            "decode": 1.0,
         }
 
         nf_plot: Optional[NFPlot] = None

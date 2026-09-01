@@ -143,6 +143,72 @@ def test_laterality_needs_channels(nf_obj):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# decode — RTDecode-backed "decode" modality
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _fit_decoder_for(nf_obj, n_channels=N_CHANNELS, n_times=N_TIMES, n_components=2):
+    from mne_rt import RTDecode
+
+    rng = np.random.default_rng(0)
+    X = rng.standard_normal((20, n_channels, n_times))
+    y = np.array([0, 1] * 10)
+    return RTDecode(info=nf_obj.rec_info, n_components=n_components).fit(X, y, verbose=False)
+
+
+class TestDecodeModality:
+    def test_decode_without_decoder_raises(self, nf_obj):
+        with pytest.raises(RuntimeError, match="set_decoder"):
+            _call_modality(nf_obj, "decode", DATA)
+
+    def test_decode_with_unfitted_decoder_raises(self, nf_obj):
+        from mne_rt import RTDecode
+
+        nf_obj.decoder = RTDecode(info=nf_obj.rec_info, n_components=2)
+        with pytest.raises(RuntimeError, match="fit"):
+            _call_modality(nf_obj, "decode", DATA)
+
+    def test_decode_proba_output(self, nf_obj):
+        nf_obj.decoder = _fit_decoder_for(nf_obj)
+
+        val, delay = _call_modality(nf_obj, "decode", DATA)
+        assert isinstance(val, float)
+        assert 0.0 <= val <= 1.0
+        assert delay >= 0
+
+    def test_decode_class_index_out_of_range_raises(self, nf_obj):
+        nf_obj.decoder = _fit_decoder_for(nf_obj)  # binary decoder: classes_ = [0, 1]
+
+        nf_obj.params = {"class_index": 5}
+        with pytest.raises(ValueError, match="class_index"):
+            nf_obj._decode_prep()
+
+    def test_decode_channel_count_mismatch_raises(self, nf_obj):
+        # Decoder fit on half as many channels as the session provides.
+        nf_obj.decoder = _fit_decoder_for(nf_obj, n_channels=N_CHANNELS // 2)
+
+        nf_obj.params = {"class_index": 1}
+        with pytest.raises(ValueError, match="channels"):
+            nf_obj._decode_prep()
+
+    def test_decode_without_predict_proba_raises(self, nf_obj):
+        from sklearn.svm import LinearSVC
+
+        from mne_rt import RTDecode
+
+        rng = np.random.default_rng(0)
+        X = rng.standard_normal((20, N_CHANNELS, N_TIMES))
+        y = np.array([0, 1] * 10)
+        nf_obj.decoder = RTDecode(info=nf_obj.rec_info, estimator=LinearSVC(), n_components=2).fit(
+            X, y, verbose=False
+        )
+
+        nf_obj.params = {"class_index": 1}
+        with pytest.raises(AttributeError, match="predict_proba"):
+            nf_obj._decode_prep()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SCP — Slow Cortical Potentials
 # ─────────────────────────────────────────────────────────────────────────────
 

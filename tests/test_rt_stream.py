@@ -439,6 +439,60 @@ def test_connect_to_array_open_stream_viewer_raises(tmp_path, array_info):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# set_decoder / "decode" modality (RTDecode, no LSL required)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _make_fitted_decoder(info, n_epochs=20):
+    from mne_rt import RTDecode
+
+    rng = np.random.default_rng(0)
+    n_ch = len(info["ch_names"])
+    X = rng.standard_normal((n_epochs, n_ch, int(info["sfreq"])))
+    y = np.array([0, 1] * (n_epochs // 2))
+    return RTDecode(info=info, n_components=2).fit(X, y, verbose=False)
+
+
+def test_set_decoder_rejects_wrong_type(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    with pytest.raises(TypeError, match="RTDecode"):
+        nf.set_decoder(object())
+
+
+def test_set_decoder_rejects_unfitted_decoder(tmp_path, array_info):
+    from mne_rt import RTDecode
+
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    with pytest.raises(RuntimeError, match="fit"):
+        nf.set_decoder(RTDecode(info=array_info))
+
+
+def test_decode_modality_without_decoder_raises(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info)
+    try:
+        nf.connect_to_array(data, array_info, n_repeat=np.inf)
+        with pytest.raises(RuntimeError, match="set_decoder"):
+            nf.record_main(duration=1.0, modality="decode", show_nf_signal=False)
+    finally:
+        nf.save()
+
+
+def test_connect_to_array_decode_modality_end_to_end(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    decoder = _make_fitted_decoder(array_info)
+    try:
+        nf.connect_to_array(data, array_info, n_repeat=np.inf)
+        nf.set_decoder(decoder)
+        nf.record_main(duration=2.0, modality="decode", show_nf_signal=False)
+        assert len(nf.nf_data["decode"]) > 0
+        assert all(0.0 <= v <= 1.0 for v in nf.nf_data["decode"])
+    finally:
+        nf.save()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ArrayStream (standalone duck-typed LSL-stream shim behind connect_to_array)
 # ─────────────────────────────────────────────────────────────────────────────
 
