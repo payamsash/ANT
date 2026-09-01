@@ -119,6 +119,20 @@ New features
 Bug fixes
 ^^^^^^^^^
 
+- **A single bad channel broke the session, and silently corrupted
+  connectivity.** ``Stream.get_data()`` defaults to ``exclude="bads"``, but
+  ``rec_info`` keeps those channels, and nine places indexed the acquired array
+  by position in ``rec_info["ch_names"]`` — the LMS reference channel, ORICA's
+  channel count, the raw viewer, GEDAI's dimension, and every connectivity and
+  source modality's channel lookup. One bad channel shifted all of them:
+  :meth:`~mne_rt.RTStream.record_baseline` raised ``len(data) does not match
+  len(info["ch_names"])`` before a session could start, and
+  ``sensor_connectivity`` would have computed on the wrong channel pair. Those
+  lookups now use the acquired array's own channel list. Bad channels are
+  deliberately still listed in ``rec_info``, since the forward model and
+  beamformer exclude them themselves and
+  :class:`~mne_rt.tools.RTMaxwellFilter` needs them marked to reconstruct them
+  through the SSS expansion.
 - **Corrected several dependency lower bounds that were never satisfiable.**
   CI only ever installed the newest release of each dependency, so the minimum
   versions declared in ``pyproject.toml`` had never been tested. Installing

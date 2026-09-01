@@ -895,3 +895,114 @@ def test_combiner_without_zscore_warns_about_scale(tmp_path, array_info):
             )
     finally:
         nf.save()
+
+
+# ------------------------------------------------------------------
+# Bad channels
+# ------------------------------------------------------------------
+
+
+def _bads_info(n_channels=16):
+    """Info with digitised positions, no bads yet."""
+    import mne
+
+    montage = mne.channels.make_standard_montage("standard_1020")
+    names = [c for c in montage.ch_names if c not in ("T3", "T4", "T5", "T6")][:n_channels]
+    info = mne.create_info(names, 250.0, "eeg")
+    info.set_montage(montage)
+    return info, names
+
+
+def _connected(tmp_path, info, names, duration=24.0):
+    nf = _make_rt_stream(tmp_path, montage=None)
+    data = np.random.default_rng(0).standard_normal((len(names), int(250.0 * duration))) * 1e-6
+    nf.connect_to_array(data, info, n_repeat=np.inf)
+    return nf
+
+
+def test_acquired_ch_names_excludes_bads(tmp_path):
+    """get_data() drops bads; rec_info keeps them. The two must not be confused."""
+    info, names = _bads_info()
+    nf = _connected(tmp_path, info, names)
+    try:
+        nf.rec_info["bads"] = [names[2], names[7]]
+        acquired = nf._acquired_ch_names()
+        assert names[2] not in acquired and names[7] not in acquired
+        assert len(acquired) == len(names) - 2
+        # rec_info still lists them, which the forward model and Maxwell need
+        assert names[2] in nf.rec_info["ch_names"]
+        window = nf.stream.get_data(1.0)[0]
+        assert window.shape[0] == len(acquired)
+    finally:
+        nf.save()
+
+
+def test_record_baseline_with_a_bad_channel_marked_after_connect(tmp_path):
+    """Regression: this raised before a session could start.
+
+    Bads are normally identified *after* connecting — during the baseline, or
+    by BadChannelDetector — so excluding them at connect time would not help.
+    """
+    info, names = _bads_info()
+    nf = _connected(tmp_path, info, names)
+    try:
+        nf.rec_info["bads"] = [names[2]]
+        nf.record_baseline(baseline_duration=2.0, winsize=1.0)
+        assert len(nf.raw_baseline.ch_names) == len(names) - 1
+    finally:
+        nf.save()
+
+
+def test_record_main_with_a_bad_channel(tmp_path):
+    info, names = _bads_info()
+    nf = _connected(tmp_path, info, names)
+    try:
+        nf.rec_info["bads"] = [names[2]]
+        nf.record_main(
+            duration=2.0,
+            winsize=1.0,
+            modality=["sensor_power"],
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+        assert len(nf.nf_data["sensor_power"]) > 0
+    finally:
+        nf.save()
+
+
+def test_connectivity_indices_follow_the_acquired_channels(tmp_path):
+    """A bad channel shifts every position in the acquired array.
+
+    Indices built from rec_info would silently select the wrong pair.
+    """
+    info, names = _bads_info()
+    nf = _connected(tmp_path, info, names)
+    try:
+        nf.rec_info["bads"] = [names[0]]  # shifts everything after it
+        nf.picks = None
+        nf.winsize = 1.0
+        nf._sfreq = 250.0
+        nf.params = {
+            "frange": [8, 13],
+            "channels": [[names[3], names[5]]],
+            "method": "coh",
+            "mode": "cwt_morlet",
+            "n_cycles": 5,
+        }
+        prep = nf._sensor_connectivity_prep()
+        acquired = nf._acquired_ch_names()
+        assert prep["indices"][0][0] == acquired.index(names[3])
+        assert prep["indices"][1][0] == acquired.index(names[5])
+    finally:
+        nf.save()
+
+
+def test_no_bad_channels_leaves_indexing_unchanged(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=5.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        assert nf._acquired_ch_names() == list(nf.rec_info["ch_names"])
+        assert nf._acquired_info() is nf.rec_info
+    finally:
+        nf.save()
