@@ -6,8 +6,9 @@ concurrency:
 on:  # yamllint disable-line rule:truthy
   push:
     branches: ["main"]
+  # No branch filter: a stacked pull request targets the branch below it rather
+  # than main, and with `branches: ["main"]` those PRs ran no checks at all.
   pull_request:
-    branches: ["main"]
   workflow_dispatch:
 
 permissions:
