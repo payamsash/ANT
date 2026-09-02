@@ -124,6 +124,28 @@ Bug fixes
   asked for. A failure during setup also stranded a running mock player and a
   connected stream, with ``_connected`` still ``False`` so the caller had no
   handle to clean up with; setup is now unwound on the way out.
+- **A sensor-space baseline no longer downloads 700 MB of anatomy.**
+  :meth:`~mne_rt.RTStream.record_baseline` ended with an unconditional
+  :meth:`~mne_rt.RTStream.compute_inv_operator`, which for the default
+  ``subject_fs_id="fsaverage"`` calls :func:`mne.datasets.fetch_fsaverage` —
+  so *every* baseline reached across the network for a head model, including
+  the many sessions that only ever compute sensor-space features. It made an
+  OSF outage look like a library failure, and it was a recurring source of red
+  CI on tests that never touch a source. The four sensor-space tests it
+  affected go from 47.7 s to 17.3 s with the anatomy already cached; on a cold
+  machine the difference is the download itself.
+
+  The head model is now built on first use — by a source-space modality, by the
+  brain-activation display, or by calling ``compute_inv_operator()`` directly,
+  which is also how you pass it non-default arguments. Nothing about a
+  source-space session changes except *when* the model is built; a sensor-space
+  session never builds one at all. The ``inv/`` files therefore appear at that
+  point rather than at the end of the baseline, and :attr:`~mne_rt.RTStream.inv`
+  is no longer set by ``record_baseline`` alone.
+  :meth:`~mne_rt.RTStream.fit_gedai` triggers the build too when
+  ``use_leadfield=True``, since it reads the forward solution and would
+  otherwise fall back to band-filter mode — a different denoising algorithm —
+  with only a log line to say so.
 - ``ArrayStream`` timestamped its samples with ``time.time()`` while the
   acquisition loop runs on ``local_clock()`` — the Unix epoch against
   seconds-since-boot, about 1.8e9 seconds apart. Any timing derived from the

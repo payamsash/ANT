@@ -207,6 +207,11 @@ class ModalityMixin:
             cache = self._source_models = {}
         key = (str(method), str(atlas))
         if key not in cache:
+            # `from_stream` needs `src`/`fwd`/`data_cov`, which record_baseline no
+            # longer builds. Note compute_inv_operator() clears this cache, so it
+            # has to run before the entry is written, not after.
+            self._ensure_head_model(f"Source modality {method!r}")
+            cache = self._source_models
             cache[key] = SourceModel.from_stream(self, method=method, atlas=atlas)
             logger.info("Built %r for method=%s atlas=%s", cache[key], method, atlas)
         return cache[key]
@@ -303,6 +308,40 @@ class ModalityMixin:
         """ROI time courses ``(n_roi, n_times)`` for one analysis window."""
         return model.apply(data, kernel=kernel, ch_picks=ch_picks, label_operator=label_operator)
 
+    def _ensure_head_model(self, reason: str, *, need_inverse: bool = False) -> None:
+        """Build the forward/inverse model if nothing has built it yet.
+
+        :meth:`~mne_rt.RTStream.record_baseline` used to do this
+        unconditionally, which meant every baseline — including sensor-space
+        ones that never look at a source — fetched the ``fsaverage`` anatomy
+        over the network. It is built here instead, on the first request that
+        actually needs it.
+
+        Parameters
+        ----------
+        reason : str
+            What asked for it, quoted in the error when no baseline exists.
+        need_inverse : bool, default False
+            Require a minimum-norm inverse operator as well as the forward
+            model.  A beamformer needs only the latter, and
+            ``compute_inv_operator(make_inverse=False)`` deliberately produces
+            no inverse, so callers that dereference :attr:`inv` have to say so
+            — otherwise this returns satisfied and they fail later with nothing
+            to explain it.
+        """
+        _have_src = getattr(self, "src", None) is not None
+        _have_inv = getattr(self, "inv", None) is not None
+        if _have_src and (_have_inv or not need_inverse):
+            return
+        if getattr(self, "raw_baseline", None) is None:
+            raise RuntimeError(
+                f"{reason} needs a head model, which needs a baseline recording. "
+                "Run record_baseline() first, or call compute_inv_operator() "
+                "yourself if you have a baseline from elsewhere."
+            )
+        logger.info("Building the head model for %s …", reason)
+        self.compute_inv_operator(make_inverse=True)
+
     def _get_inverse_operator(self):
         """Return the fitted inverse operator, from memory or from disk.
 
@@ -317,13 +356,21 @@ class ModalityMixin:
 
         stem = f"sub-{self.subject_id}_ses-{self.session}_task-baseline"
         fname = self.subject_dir / "inv" / f"{stem}_inv.fif"
-        if not Path(fname).is_file():
+        if Path(fname).is_file():
+            return read_inverse_operator(fname=fname)
+
+        # Nothing on disk either, so build it now -- raising here would be a
+        # failure the caller can do nothing about except run the very step this
+        # method exists to perform.
+        self._ensure_head_model("A source-space modality", need_inverse=True)
+        inv = getattr(self, "inv", None)
+        if inv is None:
             raise RuntimeError(
-                "No inverse operator available for a source-space modality. Run "
-                "record_baseline() (which calls compute_inv_operator()) first. "
-                f"Looked for {fname}."
+                "No inverse operator available for a source-space modality, and "
+                "building one produced none. Call compute_inv_operator() with "
+                f"make_inverse=True. Looked for {fname}."
             )
-        return read_inverse_operator(fname=fname)
+        return inv
 
     # ------------------------------------------------------------------
     # Prep methods  (run once before the main loop, return kwargs dict)

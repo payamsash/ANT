@@ -826,6 +826,9 @@ def test_source_model_is_shared_across_modalities(tmp_path, monkeypatch):
 
     monkeypatch.setattr(modalities.SourceModel, "from_stream", staticmethod(_fake_from_stream))
     obj = _modality_obj(tmp_path, {})
+    # A head model is already present, so `_get_source_model` does not try to
+    # build one -- this test is about the cache, not about construction.
+    obj.src = object()
     for _ in range(3):
         obj._get_source_model(method="LCMV", atlas="aparc+aseg")
     obj._get_source_model(method="dSPM", atlas="aparc+aseg")

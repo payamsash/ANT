@@ -90,7 +90,9 @@ Every session follows the same three-phase structure:
      <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-left:none;
           border-top:none; padding:14px 18px; flex:1; color:#14532d; box-sizing: border-box;">
        Record 2–5 min of resting-state data, automatically detects bad
-       channels, computes noise covariance, and builds the inverse operator.
+       channels and computes noise covariance. Source-space work needs a head
+       model too; that is built the first time something asks for it, so a
+       sensor-space session never pays for it.
        <code style="background:#dcfce7; padding:1px 5px; border-radius:4px;">RTStream.record_baseline()</code>
      </div>
    </div>

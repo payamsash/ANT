@@ -221,7 +221,7 @@ Pipeline overview
      <tr style="background:#f0fdf4;">
        <td style="padding:7px 14px;border-bottom:1px solid #dcfce7;font-weight:600;white-space:nowrap;">② Baseline</td>
        <td style="padding:7px 14px;border-bottom:1px solid #dcfce7;"><code>RTStream.record_baseline()</code></td>
-       <td style="padding:7px 14px;border-bottom:1px solid #dcfce7;">Bad-channel detection · ICA · noise covariance · inverse operator</td>
+       <td style="padding:7px 14px;border-bottom:1px solid #dcfce7;">Bad-channel detection · ICA · noise covariance (the head model is built on first use)</td>
      </tr>
      <tr style="background:#eff6ff;">
        <td style="padding:7px 14px;border-bottom:1px solid #dbeafe;font-weight:600;white-space:nowrap;">③ Quality control</td>

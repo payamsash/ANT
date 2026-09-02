@@ -894,8 +894,14 @@ class RTStream(ModalityMixin):
         """Record a resting-state baseline segment.
 
         Collects ``baseline_duration`` seconds of M/EEG, stores it as
-        :attr:`raw_baseline`, saves it to disk, and computes the inverse
-        operator (stored as :attr:`inv`).
+        :attr:`raw_baseline`, and saves it to disk.
+
+        The head model is **not** built here.  For ``fsaverage`` that means
+        downloading roughly 700 MB of anatomy, which a sensor-space session
+        never needs; it is built on first use instead, by a source-space
+        modality or by the brain-activation display.  Call
+        :meth:`compute_inv_operator` directly to build it eagerly, or to pass
+        non-default arguments.
 
         Parameters
         ----------
@@ -911,9 +917,9 @@ class RTStream(ModalityMixin):
         Output files written under ``<subjects_dir>/sub-<ID>/ses-<session>/``:
 
         * ``eeg/sub-<ID>_ses-<session>_task-baseline_eeg.fif``
-        * ``inv/sub-<ID>_ses-<session>_task-baseline_inv.fif``
-        * ``inv/sub-<ID>_ses-<session>_task-baseline_fwd.fif``
-        * ``inv/sub-<ID>_ses-<session>_task-baseline_cov.fif``
+
+        The ``inv/`` files listed under :meth:`compute_inv_operator` appear
+        once something asks for the head model.
 
         Examples
         --------
@@ -938,7 +944,6 @@ class RTStream(ModalityMixin):
             overwrite=True,
         )
         self.raw_baseline = raw_baseline
-        self.compute_inv_operator()
 
     def set_decoder(self, decoder: RTDecode) -> None:
         """Attach a fitted decoder for the ``"decode"`` modality.
@@ -1538,6 +1543,13 @@ class RTStream(ModalityMixin):
         raw_plot: Optional[RawPlot] = None
         topo_plot: Optional[TopomapPlot] = None
         brain_plot: Optional[BrainPlot] = None
+
+        if show_brain_activation:
+            # Before any window is shown: `_push_brain` returns early without an
+            # inverse operator, so the display would stay empty otherwise -- and
+            # on a cold cache this fetches the anatomy, which should not happen
+            # behind windows that are up but not yet painted.
+            self._ensure_head_model("The brain-activation display", need_inverse=True)
 
         needs_qt = show_nf_signal or show_brain_activation or show_raw_signal or show_topo
         app: Optional[QtWidgets.QApplication] = None
@@ -2547,7 +2559,13 @@ class RTStream(ModalityMixin):
         n_channels = len(self._acquired_ch_names())
         self.gedai = GEDAIDenoiser(n_channels=n_channels, shrinkage=shrinkage)
 
-        if use_leadfield and hasattr(self, "fwd") and self.fwd is not None:
+        if use_leadfield:
+            # The forward model is built on demand, so without this the
+            # leadfield branch below would never be taken and GEDAI would fall
+            # back to a different algorithm with only a log line to say so.
+            self._ensure_head_model("GEDAI leadfield mode")
+
+        if use_leadfield and getattr(self, "fwd", None) is not None:
             L = self.fwd["sol"]["data"]  # shape (n_ch, n_sources)
             self.gedai.fit_from_leadfield(
                 data=self.raw_baseline.get_data(),
