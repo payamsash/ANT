@@ -70,7 +70,7 @@ from mne_rt.tools import (
     remove_blinks_lms,
 )
 from mne_rt.tools.asr import ASRDenoiser
-from mne_rt.tools.bids_io import describe_nf_columns, write_nf_beh_tsv
+from mne_rt.tools.bids_io import _build_bids_stem, describe_nf_columns, write_nf_beh_tsv
 from mne_rt.tools.gedai import GEDAIDenoiser
 from mne_rt.tools.maxwell import RTMaxwellFilter
 from mne_rt.tools.orica import ORICA
@@ -795,10 +795,18 @@ class RTStream(ModalityMixin):
     # LSL connection
     # ------------------------------------------------------------------
 
-    def _teardown_existing_stream(self) -> None:
-        """Disconnect any previously-connected stream/mock player, if present."""
+    def _teardown_session_streams(self) -> None:
+        """Disconnect the acquisition stream, if one is connected."""
         if hasattr(self, "stream") and getattr(self.stream, "connected", False):
             self.stream.disconnect()
+        # mne-lsl empties the filter chain on disconnect, so a stream that is
+        # reconnected by hand starts unfiltered; leaving the flag set would run
+        # the next session with no band-pass and no notch, silently.
+        self._filters_applied = False
+
+    def _teardown_existing_stream(self) -> None:
+        """Disconnect any previously-connected stream/mock player, if present."""
+        self._teardown_session_streams()
         # The marker stream is timestamped against the signal stream, so it
         # cannot outlive it: keeping it would silently match markers to a
         # different recording.
@@ -824,6 +832,8 @@ class RTStream(ModalityMixin):
     def _finalize_stream(self, stream: Any) -> None:
         """Store the connected stream and expose its public methods on self."""
         self.stream = stream
+        # A fresh stream carries no filters, whatever the last one had.
+        self._filters_applied = False
         self.sfreq = stream.info["sfreq"]
         self.rec_info = stream.info
         self.rec_info["subject_info"] = {"his_id": self.subject_id}
@@ -1448,6 +1458,8 @@ class RTStream(ModalityMixin):
         gate_conditions: Optional[list[str]] = None,
         save_raw: bool = False,
         save_tsv: bool = True,
+        run: Optional[int] = None,
+        disconnect: bool = True,
         ref_channel: str = "Fp1",
         signal_smoothing: float = 0.25,
         display_smoothing: float = 0.3,
@@ -1639,6 +1651,14 @@ class RTStream(ModalityMixin):
             session to ``raw/<stem>-raw.fif``.  Off by default because FIF
             files can be large; enable when the raw continuous signal is
             needed for offline re-analysis or provenance.
+        run : int | None, default None
+            BIDS ``run-`` index for the output filenames, 1-based.  ``None``
+            omits the entity, which is the behaviour of earlier versions.
+            :meth:`run_blocks` sets it per block, so one block no longer
+            overwrites the previous one's files.
+        disconnect : bool, default True
+            Disconnect the stream once the session has been saved.  ``False``
+            keeps it open for a following block; see :meth:`run_blocks`.
         save_tsv : bool, default True
             Also write the per-window values as a BIDS ``_beh.tsv`` table with a
             ``_beh.json`` sidecar, alongside the session JSON.  The table carries
@@ -1708,12 +1728,15 @@ class RTStream(ModalityMixin):
         -----
         Output files written under ``<subjects_dir>/sub-<ID>/ses-<session>/``:
 
-        * ``beh/sub-<ID>_ses-<session>_task-neurofeedback_beh.json`` — NF
-          feature time-series plus session metadata
-        * ``delays/sub-<ID>_ses-<session>_task-neurofeedback_delays.json``
-          — per-step timing (only when ``estimate_delays=True``)
-        * ``eeg/sub-<ID>_ses-<session>_task-neurofeedback_eeg.fif`` —
-          pre-correction M/EEG (only when ``save_raw=True``)
+        * ``beh/<stem>_beh.json`` — NF feature time-series plus session metadata
+        * ``beh/<stem>_beh.tsv`` — the same as a BIDS behavioural table
+        * ``delays/<stem>_delays.json`` — per-step timing (only when
+          ``estimate_delays=True``)
+        * ``eeg/<stem>_eeg.fif`` — pre-correction M/EEG (only when
+          ``save_raw=True``)
+
+        where ``<stem>`` is ``sub-<ID>_ses-<session>_task-neurofeedback``, with
+        ``_run-<NN>`` appended when ``run`` is given.
 
         Examples
         --------
@@ -1757,7 +1780,14 @@ class RTStream(ModalityMixin):
             raise ValueError("`signal_smoothing` must be in (0, 1].")
 
         self._session_start_time = datetime.datetime.now(datetime.timezone.utc)
-        self._session_stem = f"sub-{self.subject_id}_ses-{self.session}"
+        # `run-` comes after `task-` in BIDS, so the whole stem is built in one
+        # place rather than assembled from a prefix at each output path.
+        self._session_stem = _build_bids_stem(
+            self.subject_id,
+            self.session,
+            "neurofeedback",
+            None if run is None else f"{int(run):02d}",
+        )
         self._ensure_dirs(include_delays=estimate_delays)
 
         # Artifact correction setup
@@ -2095,12 +2125,18 @@ class RTStream(ModalityMixin):
             )
             raw_plot.show()
 
-        if self.bandpass_freq is not None:
-            self.stream.filter(l_freq=self.bandpass_freq[0], h_freq=self.bandpass_freq[1])
-        if self.notch_freq is not None:
-            _freqs = self.notch_freq if isinstance(self.notch_freq, list) else [self.notch_freq]
-            for _f in _freqs:
-                self.stream.notch_filter(freqs=_f)
+        # Once per connection, not once per call: mne-lsl *appends* to the
+        # stream's filter chain and ArrayStream rewrites its source array in
+        # place, so a second record_main() on the same stream would run the data
+        # through a second band-pass, a third through a third.
+        if not getattr(self, "_filters_applied", False):
+            if self.bandpass_freq is not None:
+                self.stream.filter(l_freq=self.bandpass_freq[0], h_freq=self.bandpass_freq[1])
+            if self.notch_freq is not None:
+                _freqs = self.notch_freq if isinstance(self.notch_freq, list) else [self.notch_freq]
+                for _f in _freqs:
+                    self.stream.notch_filter(freqs=_f)
+            self._filters_applied = True
 
         # ---- Thread-safe queues between acquisition thread and UI ----
 
@@ -2116,6 +2152,11 @@ class RTStream(ModalityMixin):
             _queue.Queue(maxsize=4) if raw_plot is not None else None
         )
         done_event = threading.Event()
+        # Set when record_main is finishing, so an acquisition thread that
+        # outlives the join -- the Qt windows closed early, say -- stops instead
+        # of running on into the next block, where it would steal samples from
+        # its successor and submit into a pool that no longer exists.
+        stop_event = threading.Event()
         nf_data: dict[str, list] = {m: [] for m in _display_mods}
         _ema: dict[str, float] = {}  # EMA state, seeded on first window
 
@@ -2368,7 +2409,7 @@ class RTStream(ModalityMixin):
                 # NF estimates share data → smooth, correlated curve updates.
                 _hop = max(1, self.window_size_s // 2)
 
-                while local_clock() < t_start + duration:
+                while local_clock() < t_start + duration and not stop_event.is_set():
                     # Block until half a window of new samples has arrived, then
                     # fetch the latest winsize seconds (50 % overlap with prev window).
                     # While waiting, flush any accumulated raw samples to the display
@@ -2376,7 +2417,7 @@ class RTStream(ModalityMixin):
                     _t_hop = local_clock()
                     _hop_dur = _hop / self._sfreq
                     while local_clock() < _t_hop + _hop_dur:
-                        if local_clock() >= t_start + duration:
+                        if local_clock() >= t_start + duration or stop_event.is_set():
                             break
                         if raw_queue is not None:
                             n_avail = self.stream.n_new_samples
@@ -2757,7 +2798,22 @@ class RTStream(ModalityMixin):
         else:
             acq_thread.join()  # headless: block until acquisition finishes
 
+        # Ask first, then wait: the loop runs to `t_start + duration` regardless
+        # of whether the windows are still open, so a bounded join alone can
+        # return with the thread still live.
+        stop_event.set()
         acq_thread.join(timeout=10)
+        if acq_thread.is_alive():
+            logger.warning(
+                "The acquisition thread did not stop within 10 s; the session is being "
+                "saved without it."
+            )
+        # After the join, so the brain-plot task submitted from the acquisition
+        # thread cannot still be running `apply_inverse_raw` while the session
+        # is serialised below. Left in place rather than set to None, because a
+        # thread that outlived the join would then submit into `None`.
+        if getattr(self, "executor", None) is not None:
+            self.executor.shutdown(wait=True)
 
         # ---- Persist results ----
 
@@ -2813,12 +2869,31 @@ class RTStream(ModalityMixin):
             # JSON is the full record. Writing only the JSON meant the per-window
             # table never reached disk in the default flow.
             bids_tsv=save_tsv,
+            disconnect=disconnect,
         )
         for kind, path in saved_files.items():
             logger.info("Saved %s → %s", kind, path)
 
-        if nf_plot is not None:
-            nf_plot.close()
+        # All of them, not just the neurofeedback trace: leaving the others open
+        # means a second block stacks a fresh set of windows on top of the last.
+        for _w in (nf_plot, raw_plot, topo_plot):
+            if _w is not None:
+                try:
+                    _w.close()
+                except Exception:
+                    logger.debug("Closing %s failed.", type(_w).__name__, exc_info=True)
+        if brain_plot is not None:
+            # Not a QWidget: it wraps a PyVista plotter and has no close() of
+            # its own, so a bare `.close()` would raise into a swallowed
+            # exception and leave the window on screen.
+            try:
+                brain_plot.stop_recording()
+            except Exception:
+                logger.debug("Stopping the brain recording failed.", exc_info=True)
+            try:
+                brain_plot.plotter.close()
+            except Exception:
+                logger.debug("Closing the brain plotter failed.", exc_info=True)
 
     # ------------------------------------------------------------------
     # Offline replay
@@ -2948,8 +3023,24 @@ class RTStream(ModalityMixin):
         Notes
         -----
         :meth:`save` is called internally at the end of *each* block by
-        :meth:`record_main`.  The returned list lets you inspect per-block
-        feature time-series without re-loading JSON files.
+        :meth:`record_main`.  Each block is written under its own BIDS
+        ``run-`` entity — ``run-01``, ``run-02``, … — so one block no longer
+        overwrites the previous one's files.  Pass ``"run"`` in a block dict to
+        override the index.
+
+        The stream stays connected between blocks.  Only the final block
+        disconnects it, because :meth:`save`'s teardown also stops the mock
+        player, which reconnecting the stream alone cannot undo.
+
+        The returned list carries each block's feature time-series.
+        :attr:`block_results` carries the rest — rewards, window onsets and
+        durations, dropped-window counts and artifact rates — which are
+        otherwise overwritten by the following block.
+
+        Protocol objects are **not** reset between blocks: a
+        :class:`~mne_rt.protocols.ZScoreProtocol` passed to two blocks carries
+        its running statistics from one into the next.  A combiner *is* reset.
+        If you want a protocol to start fresh, pass a new instance per block.
 
         Examples
         --------
@@ -2980,10 +3071,12 @@ class RTStream(ModalityMixin):
         all_nf_data: list[dict] = []
         all_artifact_rates: list[float] = []
         all_snr_data: list[list] = []
+        all_results: list[dict] = []
 
         for i, block in enumerate(blocks):
             block_kwargs = dict(block)
             post_rest = float(block_kwargs.pop("rest", rest_duration))
+            _last = i == len(blocks) - 1
 
             logger.info(
                 "run_blocks: starting block %d/%d (duration=%.0f s)",
@@ -2991,18 +3084,56 @@ class RTStream(ModalityMixin):
                 len(blocks),
                 block_kwargs.get("duration", 0),
             )
-            self.record_main(verbose=verbose, **block_kwargs)
+            # Popped before the call rather than inside it: relying on argument
+            # evaluation order to run these before `**block_kwargs` is expanded
+            # would be a duplicate-keyword TypeError waiting to happen.
+            # Each block writes its own files instead of overwriting the previous
+            # block's, and the stream stays up between blocks -- `save()` stops
+            # the mock player, which reconnecting the stream alone cannot undo.
+            block_run = block_kwargs.pop("run", i + 1)
+            block_disconnect = block_kwargs.pop("disconnect", _last)
+            self.record_main(
+                verbose=verbose,
+                run=block_run,
+                disconnect=block_disconnect,
+                **block_kwargs,
+            )
+            # Everything record_main rebinds, not the three that happened to be
+            # captured before: the rest were overwritten by the next block and
+            # lost.
             all_nf_data.append(dict(self.nf_data))
             all_artifact_rates.append(self.artifact_rate)
             all_snr_data.append(list(self.snr_data))
+            all_results.append(
+                {
+                    "run": block_run,
+                    "nf_data": dict(self.nf_data),
+                    "reward_data": {k: list(v) for k, v in self.reward_data.items()},
+                    "window_onsets": list(getattr(self, "window_onsets", [])),
+                    "window_durations": list(getattr(self, "window_durations", [])),
+                    "n_short_windows": getattr(self, "n_short_windows", 0),
+                    "artifact_rate": self.artifact_rate,
+                    "n_total_windows": getattr(self, "n_total_windows", 0),
+                    "n_artifact_windows": getattr(self, "n_artifact_windows", 0),
+                    "snr_data": list(self.snr_data),
+                    # Present only with estimate_delays=True, and overwritten by
+                    # the next block like everything else here.
+                    "acq_delays": list(getattr(self, "acq_delays", [])),
+                    "artifact_delays": list(getattr(self, "artifact_delays", [])),
+                    "method_delays": {
+                        k: list(v) for k, v in getattr(self, "method_delays", {}).items()
+                    },
+                }
+            )
 
-            if i < len(blocks) - 1 and post_rest > 0:
+            if not _last and post_rest > 0:
                 logger.info("run_blocks: rest period %.0f s …", post_rest)
                 time.sleep(post_rest)
 
         self.block_nf_data = all_nf_data
         self.block_artifact_rates = all_artifact_rates
         self.block_snr_data = all_snr_data
+        self.block_results = all_results
         return all_nf_data
 
     # ------------------------------------------------------------------
@@ -3707,13 +3838,14 @@ class RTStream(ModalityMixin):
         bids_tsv: bool = False,
         format: str = "json",
         delay_include_trace: bool = False,
+        disconnect: bool = True,
     ) -> dict[str, Path]:
-        """Save session outputs and disconnect the LSL stream.
+        """Save session outputs and, by default, disconnect the LSL stream.
 
-        All output files share the stem
-        ``sub-<ID>_ses-<session>`` set at the
-        start of :meth:`record_main`, so multiple runs in a day never
-        overwrite each other.
+        All output files share the stem set at the start of
+        :meth:`record_main` — see Notes for its shape. Two sessions saved
+        without a ``run`` index **do** overwrite each other; pass ``run=`` to
+        :meth:`record_main`, as :meth:`run_blocks` does.
 
         Parameters
         ----------
@@ -3762,24 +3894,35 @@ class RTStream(ModalityMixin):
 
         Notes
         -----
-        Disconnects the LSL stream as a side effect — the stream is not
-        needed after the session ends.
+        Output filenames are built from the BIDS stem
+        ``sub-<ID>_ses-<session>_task-neurofeedback``, plus a ``_run-<NN>``
+        entity when :meth:`record_main` was given one.
+
+        Disconnects the LSL stream as a side effect, because the stream is not
+        normally needed once the session ends.  Pass ``disconnect=False`` to
+        keep it — :meth:`run_blocks` does, since a block is not the end of the
+        session.  Note the mock player is *stopped* rather than paused, and
+        :meth:`connect_to_lsl` builds a new one, so a disconnected mock session
+        cannot be resumed by reconnecting the stream alone.
         """
-        if hasattr(self, "stream") and getattr(self.stream, "connected", False):
-            self.stream.disconnect()
-        self._teardown_marker_stream()
-        if hasattr(self, "_mock_player"):
-            try:
-                self._mock_player.stop()
-            except Exception:
-                pass
+        if disconnect:
+            self._teardown_session_streams()
+            self._teardown_marker_stream()
+            if getattr(self, "_mock_player", None) is not None:
+                try:
+                    self._mock_player.stop()
+                except Exception:
+                    pass
 
         self._ensure_dirs()
 
+        # Includes the `task-` and any `run-` entity, in BIDS order. The
+        # fallback has to build the same shape, since it is what a caller who
+        # invokes save() without record_main() gets.
         stem = getattr(
             self,
             "_session_stem",
-            f"sub-{self.subject_id}_ses-{self.session}",
+            _build_bids_stem(self.subject_id, self.session, "neurofeedback", None),
         )
         saved: dict[str, Path] = {}
 
@@ -3913,13 +4056,13 @@ class RTStream(ModalityMixin):
                 snr=snr,
                 meta=payload["meta"],
             )
-            p = self.subject_dir / "beh" / f"{stem}_task-neurofeedback_beh.json"
+            p = self.subject_dir / "beh" / f"{stem}_beh.json"
             with open(p, "w") as fh:
                 json.dump(payload, fh, indent=2)
             saved["nf_data"] = p
 
             if bids_tsv:
-                tsv_p = self.subject_dir / "beh" / f"{stem}_task-neurofeedback_beh.tsv"
+                tsv_p = self.subject_dir / "beh" / f"{stem}_beh.tsv"
                 # `sidecar=False`: BIDS would put the descriptions in
                 # `<stem>_beh.json`, which is the session payload's own filename.
                 # They go into that payload instead, under "columns", so the one
@@ -3952,7 +4095,7 @@ class RTStream(ModalityMixin):
                     m: _summarize([float(v) for v in vals], delay_include_trace)
                     for m, vals in self.method_delays.items()
                 }
-            p = self.subject_dir / "delays" / f"{stem}_task-neurofeedback_delays.json"
+            p = self.subject_dir / "delays" / f"{stem}_delays.json"
             with open(p, "w") as fh:
                 json.dump(delays_payload, fh, indent=2)
             saved["delays"] = p
@@ -3964,7 +4107,7 @@ class RTStream(ModalityMixin):
             if chunks:
                 raw_all = np.concatenate(chunks, axis=1)
                 raw_nf = RawArray(raw_all, self.rec_info, verbose=False)
-                p = self.subject_dir / "eeg" / f"{stem}_task-neurofeedback_eeg.fif"
+                p = self.subject_dir / "eeg" / f"{stem}_eeg.fif"
                 raw_nf.save(p, overwrite=True, verbose=False)
                 saved["raw"] = p
             else:
@@ -4152,7 +4295,14 @@ class RTStream(ModalityMixin):
         return report_path
 
     def __del__(self) -> None:
-        """Stop the mock player and disconnect the stream on garbage collection."""
+        """Release the thread pool, stop the mock player, disconnect the stream."""
+        if getattr(self, "executor", None) is not None:
+            try:
+                # `wait=False`: a record_main that raised may have left work
+                # queued, and blocking here would hang interpreter shutdown.
+                self.executor.shutdown(wait=False)
+            except Exception:
+                pass
         if getattr(self, "_mock_player", None) is not None:
             try:
                 self._mock_player.stop()

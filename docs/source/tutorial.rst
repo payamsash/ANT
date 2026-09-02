@@ -383,7 +383,9 @@ all within one Python call:
         ],
         rest_duration=60,           # 60 s rest between blocks
     )
-    # Results per block: nf.block_nf_data, nf.block_artifact_rates
+    # Each block writes its own files, under run-01, run-02, ...
+    # Per-block results: nf.block_nf_data, nf.block_artifact_rates, and
+    # nf.block_results for rewards, window onsets and dropped-window counts.
 
 **Cross-session transfer** — seed the protocol's running statistics from the
 previous session's file so rewards start immediately (no warmup phase):
