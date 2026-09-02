@@ -11,7 +11,7 @@ Version 1.2.0
 *unreleased*
 
 New features
-^^^^^^^^^^^
+^^^^^^^^^^^^
 
 - **Every analysis window now carries its own onset.** Sessions previously saved
   only a start time, leaving a window's time to be inferred as
@@ -40,6 +40,26 @@ New features
   truncated when sizing the window but rounded up when fetching it, so a
   non-integral product silently discards *every* window and produces an empty
   session.
+- **:class:`~mne_rt.RTEpochs` can now cut epochs on a separate LSL marker
+  stream**, which is what a PsychoPy paradigm publishes. Until now the event
+  codes had to arrive on a ``"stim"``-type channel *inside* the M/EEG stream
+  itself, so an amplifier bridged to LSL without a stim channel could not
+  trigger an epoch at all. Pass ``event_stream_name`` (or ``event_source_id``)
+  to :meth:`~mne_rt.RTEpochs.connect_to_lsl`, and ``event_channels`` then names
+  a channel of that stream.
+
+  When an event stream is used, both streams are connected with
+  ``processing_flags="all"``: two LSL streams share a time base only once their
+  clocks are synchronised, and without it markers published from a second
+  machine sit at an arbitrary offset from the data, so every epoch is cut in
+  the wrong place and nothing reports it.
+
+  The publisher has three requirements, each documented with a runnable snippet
+  on :meth:`~mne_rt.RTEpochs.connect_to_lsl`: the outlet must be **numeric**
+  (mne-lsl refuses string streams outright, and ``"string"`` is the format most
+  PsychoPy marker examples use), it should **label its channel** — an
+  unlabelled outlet is exposed as ``"0"`` — and the codes must be positive
+  integers no greater than 32767.
 
 Numeric output changes
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -89,6 +109,21 @@ has been removed — passing a floor now *opts back into* the old behaviour.
 Bug fixes
 ^^^^^^^^^
 
+- **Every :class:`~mne_rt.RTEpochs` epoch carried a trailing all-zero sample.**
+  The epoch buffer was sized as ``round((tmax - tmin) * sfreq) + 1``, but
+  mne-lsl produces ``ceil((tmax - tmin) * sfreq)`` samples with
+  ``endpoint=False`` — one fewer. The last column was therefore never written,
+  so it stayed at zero: a step to zero at the end of every epoch, biasing any
+  average taken over the full window, and a reported ``tmax`` one sample past
+  the truth. The width and ``tmin`` now come from
+  :attr:`~mne_lsl.stream.EpochsStream.times` rather than being re-derived.
+- **:meth:`~mne_rt.RTEpochs.connect_to_lsl` left stale handles behind.**
+  Reconnecting without an event stream after a session that used one passed the
+  now-disconnected marker stream to ``EpochsStream``, which refuses it — so the
+  second connection failed with an error about a stream the caller had not
+  asked for. A failure during setup also stranded a running mock player and a
+  connected stream, with ``_connected`` still ``False`` so the caller had no
+  handle to clean up with; setup is now unwound on the way out.
 - ``ArrayStream`` timestamped its samples with ``time.time()`` while the
   acquisition loop runs on ``local_clock()`` — the Unix epoch against
   seconds-since-boot, about 1.8e9 seconds apart. Any timing derived from the

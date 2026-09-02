@@ -60,6 +60,15 @@ print(f"Demo file: {raw_demo.times[-1]:.0f} s, {len(raw_demo.ch_names)} channels
 # adds a per-trial ``on_trial(n_accepted, data, event_code, condition)``
 # callback that fires after every accepted epoch.  This is the hook that the
 # Qt plot windows use to update in real time.
+#
+# Here the triggers ride on a STIM channel of the recording itself.  When they
+# arrive on a separate LSL marker stream instead -- what a PsychoPy paradigm
+# publishes -- name that stream in :meth:`~mne_rt.RTEpochs.connect_to_lsl` and
+# ``event_channels`` refers to a channel of it::
+#
+#     rt.connect_to_lsl(stream_name="ANT", event_stream_name="psychopy_markers")
+#
+# See that method's ``Notes`` for what the marker outlet has to look like.
 
 from mne_rt import RTEpochs
 
