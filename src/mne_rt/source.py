@@ -680,7 +680,8 @@ class SourceModel:
         ----------
         rt : instance of RTStream
             Session with ``src``/``fwd``/``data_cov`` set — i.e. one on which
-            :meth:`~mne_rt.RTStream.record_baseline` has been run.
+            :meth:`~mne_rt.RTStream.compute_inv_operator` has run, directly or
+            through the first source modality that needed it.
         atlas : str | None
             Overrides the session's ``source_atlas``.
         method : str
@@ -693,8 +694,9 @@ class SourceModel:
         src = getattr(rt, "src", None)
         if src is None:
             raise RuntimeError(
-                "No source space on the session. Run record_baseline() (which calls "
-                "compute_inv_operator()) before building a SourceModel."
+                "No source space on the session. Run record_baseline(), then let a "
+                "source modality build the head model, or call "
+                "compute_inv_operator() yourself, before building a SourceModel."
             )
         atlas = atlas if atlas is not None else getattr(rt, "source_atlas", "aparc")
         info = _with_average_reference(rt.rec_info)
@@ -735,7 +737,7 @@ class SourceModel:
         if inverse is None:
             raise RuntimeError(
                 f"Source method {method!r} needs a minimum-norm inverse operator, but the "
-                "session has none. Run record_baseline() with make_inverse=True, or use "
+                "session has none. Call compute_inv_operator(make_inverse=True), or use "
                 "method='LCMV'."
             )
         # A volume source space has no cortical normal, so the estimate is a

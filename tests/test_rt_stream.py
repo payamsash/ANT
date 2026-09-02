@@ -1591,3 +1591,118 @@ def test_short_window_count_is_saved_even_with_no_windows(tmp_path, array_info):
     assert nf.nf_data["sensor_power"] == []
     payload = json.loads(next(pathlib.Path(nf.subject_dir).rglob("*_beh.json")).read_text())
     assert payload["meta"]["n_short_windows"] > 0
+
+
+# ------------------------------------------------------------------
+# The head model is built on demand, not by every baseline
+# ------------------------------------------------------------------
+
+
+def test_record_baseline_does_not_build_a_head_model(tmp_path, array_info, monkeypatch):
+    """A sensor-space baseline must not reach across the network.
+
+    `compute_inv_operator` calls `fetch_fsaverage()`, ~700 MB from osf.io, and
+    `record_baseline` used to call it unconditionally -- so four sensor-space
+    tests that never look at a source depended on that download, and failed
+    whenever OSF was slow.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    calls = []
+    monkeypatch.setattr(type(nf), "compute_inv_operator", lambda self, *a, **kw: calls.append(1))
+    try:
+        nf.connect_to_array(_make_array_data(array_info), array_info)
+        nf.record_baseline(baseline_duration=1.0, winsize=0.5)
+
+        assert nf.raw_baseline is not None
+        assert calls == []
+        assert nf.src is None
+        assert list(pathlib.Path(nf.subject_dir).rglob("*_inv.fif")) == []
+    finally:
+        nf.save()
+
+
+def test_head_model_is_built_on_first_request(tmp_path, array_info, monkeypatch):
+    """Deferred, not dropped: whatever needs it triggers the build."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    calls = []
+
+    def _fake_compute(self, *a, **kw):
+        calls.append(1)
+        self.src = object()
+
+    monkeypatch.setattr(type(nf), "compute_inv_operator", _fake_compute)
+    try:
+        nf.connect_to_array(_make_array_data(array_info), array_info)
+        nf.record_baseline(baseline_duration=1.0, winsize=0.5)
+        assert calls == []
+
+        nf._ensure_head_model("A source modality")
+        assert calls == [1]
+
+        # Built once, then reused.
+        nf._ensure_head_model("A source modality")
+        assert calls == [1]
+    finally:
+        nf.save()
+
+
+def test_head_model_without_a_baseline_says_so(tmp_path):
+    """The error has to name the missing step, not the missing attribute."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    with pytest.raises(RuntimeError, match="record_baseline"):
+        nf._ensure_head_model("The brain-activation display")
+
+
+def test_gedai_leadfield_mode_builds_the_head_model(tmp_path, array_info, monkeypatch):
+    """`fit_gedai` gates on `self.fwd`, which nothing else populates now.
+
+    Without this it would fall through to band-filter mode -- a different
+    denoising algorithm -- with only a log line to say so.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    asked = []
+
+    def _fake_ensure(self, reason, **kw):
+        asked.append(reason)
+        # What the real build leaves behind, which is what the branch reads.
+        # Random rather than zeros: GEDAI decomposes it, and a singular
+        # leadfield yields NaNs.
+        rng = np.random.default_rng(0)
+        self.fwd = {"sol": {"data": rng.standard_normal((len(array_info["ch_names"]), 20))}}
+
+    monkeypatch.setattr(type(nf), "_ensure_head_model", _fake_ensure)
+    try:
+        nf.connect_to_array(_make_array_data(array_info), array_info)
+        nf.record_baseline(baseline_duration=1.0, winsize=0.5)
+        nf.fit_gedai(use_leadfield=True)
+        assert asked == ["GEDAI leadfield mode"]
+        assert nf.fwd is not None
+    finally:
+        nf.save()
+
+
+def test_head_model_guard_checks_what_the_caller_needs(tmp_path, array_info, monkeypatch):
+    """`compute_inv_operator(make_inverse=False)` leaves `src` set but `inv` None.
+
+    Testing only `src` would report the model present and let the
+    brain-activation display fail silently later.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    calls = []
+
+    def _fake_compute(self, *a, **kw):
+        calls.append(kw.get("make_inverse"))
+        self.src = object()
+        self.inv = object() if kw.get("make_inverse") else None
+
+    monkeypatch.setattr(type(nf), "compute_inv_operator", _fake_compute)
+    nf.raw_baseline = object()
+
+    # A beamformer needs no inverse, so a forward-only model satisfies it.
+    nf.src, nf.inv = object(), None
+    nf._ensure_head_model("A beamformer")
+    assert calls == []
+
+    # The brain display dereferences `inv`, so it must not be told to proceed.
+    nf._ensure_head_model("The brain-activation display", need_inverse=True)
+    assert calls == [True]

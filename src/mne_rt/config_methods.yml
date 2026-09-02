@@ -164,7 +164,10 @@ NF_modality:
   # ── Source-space power ─────────────────────────────────────────────────────
   # All source-space modalities require:
   #   • A FreeSurfer reconstruction (subjects_dir)
-  #   • A completed record_baseline() (noise covariance + inverse operator)
+  #   • A completed record_baseline(). The head model itself (forward solution,
+  #     covariances, inverse operator) is built the first time a source modality
+  #     asks for it, so a sensor-space session never pays for it. Call
+  #     compute_inv_operator() directly to build it eagerly or with non-defaults.
 
   # ROIs are named groups of atlas labels. Each entry of `rois` may be:
   #   • an alias        — "Broca", "Wernicke", "Hippocampus-lh"
