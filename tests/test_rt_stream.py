@@ -2173,3 +2173,247 @@ def test_sidecar_omits_empty_levels():
         meta={"marker_id": {"speech": 1, "rest": 2}},
     )
     assert cols["condition"]["Levels"] == {"rest": "rest", "speech": "speech"}
+
+
+# ------------------------------------------------------------------
+# Multi-block sessions
+# ------------------------------------------------------------------
+
+
+def _two_block_session(tmp_path, array_info, **block_kwargs):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=40.0), array_info, n_repeat=np.inf)
+    blocks = [
+        dict(duration=3.0, winsize=1.0, modality="sensor_power", **block_kwargs),
+        dict(duration=3.0, winsize=1.0, modality="sensor_power", **block_kwargs),
+    ]
+    nf.run_blocks(blocks=blocks, rest_duration=0.0)
+    return nf
+
+
+def test_run_blocks_runs_every_block(tmp_path, array_info):
+    """`record_main` called `save()`, which disconnected the stream.
+
+    Block 2 then fetched from a disconnected stream: headless that wrote an
+    *empty* session over block 1's files, and with the Qt windows open it hung
+    forever, because the event loop only quits once the acquisition thread
+    signals it is done.
+    """
+    nf = _two_block_session(tmp_path, array_info, show_raw_signal=False, show_nf_signal=False)
+
+    assert len(nf.block_nf_data) == 2
+    for block in nf.block_nf_data:
+        assert len(block["sensor_power"]) > 0
+
+
+def test_run_blocks_keeps_the_stream_up_until_the_last_block(tmp_path, array_info):
+    """Reconnecting would not be enough: `save()` also stops the mock player."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=40.0), array_info, n_repeat=np.inf)
+    connected_during = []
+
+    original = type(nf).record_main
+
+    def _spy(self, *a, **kw):
+        connected_during.append(self.stream.connected)
+        return original(self, *a, **kw)
+
+    nf.record_main = _spy.__get__(nf)
+    nf.run_blocks(
+        blocks=[
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                show_raw_signal=False,
+                show_nf_signal=False,
+            ),
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                show_raw_signal=False,
+                show_nf_signal=False,
+            ),
+        ],
+        rest_duration=0.0,
+    )
+
+    assert connected_during == [True, True]
+    # ...and the last block does disconnect.
+    assert not nf.stream.connected
+
+
+def test_run_blocks_writes_one_file_per_block(tmp_path, array_info):
+    """No `run-` entity meant block N clobbered block N-1's JSON, TSV and raw."""
+    nf = _two_block_session(tmp_path, array_info, show_raw_signal=False, show_nf_signal=False)
+
+    names = sorted(p.name for p in pathlib.Path(nf.subject_dir).rglob("*_beh.json"))
+    assert len(names) == 2
+    assert any("run-01" in n for n in names)
+    assert any("run-02" in n for n in names)
+
+
+def test_single_session_filenames_are_unchanged(tmp_path, array_info):
+    """Back-compat guard: without `run`, the BIDS stem must not gain an entity."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    nf.record_main(
+        duration=3.0,
+        winsize=1.0,
+        modality="sensor_power",
+        show_raw_signal=False,
+        show_nf_signal=False,
+    )
+
+    names = [p.name for p in pathlib.Path(nf.subject_dir).rglob("*_beh.json")]
+    assert names == ["sub-sub01_ses-01_task-neurofeedback_beh.json"]
+
+
+def test_filters_are_applied_once_per_connection(tmp_path, array_info):
+    """mne-lsl appends to the filter chain, so a second block would band-pass twice."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1", bandpass_freq=(1.0, 40.0))
+    nf.connect_to_array(_make_array_data(array_info, duration=40.0), array_info, n_repeat=np.inf)
+    applied = []
+    original = type(nf.stream).filter
+
+    def _spy(self, *a, **kw):
+        applied.append((a, kw))
+        return original(self, *a, **kw)
+
+    nf.stream.filter = _spy.__get__(nf.stream)
+    nf.run_blocks(
+        blocks=[
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                show_raw_signal=False,
+                show_nf_signal=False,
+            ),
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                show_raw_signal=False,
+                show_nf_signal=False,
+            ),
+        ],
+        rest_duration=0.0,
+    )
+
+    assert len(applied) == 1
+
+
+def test_run_blocks_keeps_every_per_block_result(tmp_path, array_info):
+    """Only three of nine were captured; the rest were overwritten and lost."""
+    nf = _two_block_session(tmp_path, array_info, show_raw_signal=False, show_nf_signal=False)
+
+    assert len(nf.block_results) == 2
+    for i, res in enumerate(nf.block_results):
+        assert res["run"] == i + 1
+        assert len(res["window_onsets"]) == len(res["nf_data"]["sensor_power"])
+        assert "reward_data" in res and "n_short_windows" in res
+
+
+def test_run_blocks_records_the_run_index_it_actually_wrote(tmp_path, array_info):
+    """A block may override its own index; the in-memory record must match."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    nf.run_blocks(
+        blocks=[
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                run=7,
+                show_raw_signal=False,
+                show_nf_signal=False,
+            )
+        ],
+        rest_duration=0.0,
+    )
+
+    assert nf.block_results[0]["run"] == 7
+    assert any("run-07" in p.name for p in pathlib.Path(nf.subject_dir).rglob("*_beh.json"))
+
+
+def test_block_results_carry_the_delay_traces(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    nf.run_blocks(
+        blocks=[
+            dict(
+                duration=3.0,
+                winsize=1.0,
+                modality="sensor_power",
+                estimate_delays=True,
+                show_raw_signal=False,
+                show_nf_signal=False,
+            )
+        ],
+        rest_duration=0.0,
+    )
+
+    res = nf.block_results[0]
+    assert res["acq_delays"] and res["method_delays"]["sensor_power"]
+    assert "n_artifact_windows" in res
+
+
+def test_disconnecting_clears_the_filter_flag(tmp_path, array_info):
+    """mne-lsl empties its filter chain on disconnect.
+
+    Leaving the flag set would run the next session unfiltered, silently.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1", bandpass_freq=(1.0, 40.0))
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    nf.record_main(
+        duration=3.0,
+        winsize=1.0,
+        modality="sensor_power",
+        show_raw_signal=False,
+        show_nf_signal=False,
+    )
+
+    assert nf._filters_applied is False
+
+
+def test_executor_survives_a_thread_that_outlives_the_join(tmp_path, array_info):
+    """The pool is shut down but not unbound.
+
+    Rebinding it to None would make a still-running acquisition thread submit
+    into `None`, killing it before it stores its raw chunks.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=3.0,
+            winsize=1.0,
+            modality="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+        assert nf.executor is not None
+        assert nf.executor._shutdown
+    finally:
+        if nf.stream.connected:
+            nf.stream.disconnect()
+
+
+def test_executor_is_shut_down_when_record_main_returns(tmp_path, array_info):
+    """Nothing joined the pool, so the brain-plot task could still be running."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    nf.connect_to_array(_make_array_data(array_info, duration=20.0), array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=3.0,
+            winsize=1.0,
+            modality="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+        assert nf.executor._shutdown
+    finally:
+        if nf.stream.connected:
+            nf.stream.disconnect()

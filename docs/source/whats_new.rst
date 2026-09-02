@@ -195,6 +195,42 @@ Bug fixes
   only when the thread signals that it is done, and that signal was the last
   statement of a body that had already raised. Nothing was saved and the call
   never returned. The signal is now sent from a ``finally``.
+- **:meth:`~mne_rt.RTStream.run_blocks` never worked past the first block.**
+  :meth:`~mne_rt.RTStream.record_main` ends by calling
+  :meth:`~mne_rt.RTStream.save`, which disconnects the stream, so block 2 read
+  from a stream that was already gone. Headless that produced an *empty*
+  session written over block 1's files — silent data loss — and with the plot
+  windows open the Qt event loop never returned, because it only quits once the
+  acquisition thread reports finishing, and that thread had died. The feature is
+  documented in the tutorial and has its own combiner handling in
+  ``record_main``, so it was plainly meant to work; its two tests only checked
+  that the method exists and that an empty list raises.
+
+  :meth:`~mne_rt.RTStream.save` gained ``disconnect=True`` and
+  ``record_main`` the same, both defaulting to today's behaviour;
+  ``run_blocks`` keeps the stream up until the last block. Reconnecting between
+  blocks would not have been enough — ``save`` also stops the mock player, and
+  ``connect_to_lsl`` builds a new one.
+- **Each block overwrote the previous block's files.** The session stem carried
+  no BIDS ``run-`` entity, so every block wrote the same JSON, TSV, delays and
+  raw FIF. ``record_main`` gained ``run=``, and ``run_blocks`` numbers its
+  blocks ``run-01``, ``run-02``, … A session that does not set it keeps exactly
+  the filenames it had.
+- **Filters compounded across blocks.** ``record_main`` applied the bandpass and
+  notch on every call, and both mne-lsl and :class:`~mne_rt.ArrayStream`
+  *accumulate* rather than replace — so block 2 ran through two band-passes and
+  block 3 through three. They are now applied once per connection.
+- The feature-extraction thread pool is shut down when
+  :meth:`~mne_rt.RTStream.record_main` returns. Nothing joined it before, so the
+  brain-activation task could still be computing an inverse solution while the
+  session was being written to disk.
+- ``run_blocks`` kept only three of each block's results; rewards, window
+  onsets and durations, dropped-window counts, artifact counts and the delay
+  traces were overwritten by the next block and lost. They are all in the new
+  :attr:`~mne_rt.RTStream.block_results`.
+- Every plot window is closed at the end of a session, not only
+  :class:`~mne_rt.viz.NFPlot` — a second block used to stack a fresh set on top
+  of the last.
 - ``ArrayStream`` timestamped its samples with ``time.time()`` while the
   acquisition loop runs on ``local_clock()`` — the Unix epoch against
   seconds-since-boot, about 1.8e9 seconds apart. Any timing derived from the
