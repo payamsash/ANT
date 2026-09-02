@@ -13,6 +13,41 @@ Version 1.2.0
 New features
 ^^^^^^^^^^^^
 
+- **The neurofeedback loop can now read an experiment's markers, and gate
+  feedback on them.** :meth:`~mne_rt.RTStream.record_main` had no event
+  awareness at all: a saved session could not say which windows were task and
+  which were rest, and feedback ran continuously whether or not the subject was
+  being asked to do anything. Attach the stimulus program's marker outlet with
+  :meth:`~mne_rt.RTStream.connect_marker_stream`, and every analysis window is
+  tagged with the condition that was running; pass ``gate_conditions`` to
+  :meth:`~mne_rt.RTStream.record_main` to restrict feedback to chosen
+  conditions.
+
+  A window outside the gate still computes its feature and is saved, so the
+  trace stays dense — but no protocol is evaluated for it, and **nothing is
+  sent over OSC or LSL**. Not evaluating is what "do not update" has to mean
+  for a stateful protocol, and the silence lets the stimulus program hold its
+  own display state rather than being handed a value it should not show.
+
+  The condition is a *latch*: the label of the most recent marker at or before
+  the window's end. With 50 % overlap most windows contain no marker at all, so
+  a containment rule would leave them unlabelled. ``n_markers`` counts markers
+  arriving since the previous window ended, which partitions the run — counting
+  markers *inside* each window would count most of them twice. The markers
+  themselves are saved under ``"markers"`` as ground truth, since every
+  per-window column is a lossy projection of them.
+
+  :class:`~mne_rt.MarkerArrayStream` and
+  :meth:`~mne_rt.RTStream.connect_marker_array` replay a fixed marker schedule
+  with no LSL networking, which is what makes a gated session testable and
+  demonstrable offline. :class:`~mne_rt.ArrayStream` cannot serve: it assumes a
+  sampling rate throughout, and a marker stream is irregular.
+- ``connect_to_lsl`` gained ``processing_flags``, forwarded to mne-lsl. Pass
+  ``"all"`` to enable ``clocksync`` when markers are published from a second
+  machine; ``connect_marker_stream`` enables it for itself by default and warns
+  when the M/EEG stream was connected without it. Two LSL streams share a time
+  base only once their clocks are synchronised — otherwise every marker lands
+  in the wrong window with nothing to report it.
 - **Every analysis window now carries its own onset.** Sessions previously saved
   only a start time, leaving a window's time to be inferred as
   ``index * winsize/2``. That inference is not sound. It drifts — measured at
@@ -146,6 +181,20 @@ Bug fixes
   ``use_leadfield=True``, since it reads the forward solution and would
   otherwise fall back to band-filter mode — a different denoising algorithm —
   with only a log line to say so.
+- **Feedback fired during the z-score warmup.** ``_apply_zscore`` passes the
+  raw value through until a modality has ``zscore_warmup`` windows behind it,
+  but the per-modality protocol was evaluated on those windows regardless. With
+  ``zscore_normalize=True`` the subject was therefore rewarded on native-unit
+  values — band power is ~1e-12 V²/Hz — against a z-score-calibrated threshold,
+  which is random reinforcement at the start of every run. The combiner path
+  already guarded against this; the per-modality path now does too. The gate is
+  per-modality rather than the combiner's ``all(...)``, which would block one
+  band's protocol because another band had not warmed yet.
+- An exception anywhere in the acquisition thread used to leave
+  :meth:`~mne_rt.RTStream.record_main` running forever: the Qt event loop exits
+  only when the thread signals that it is done, and that signal was the last
+  statement of a body that had already raised. Nothing was saved and the call
+  never returned. The signal is now sent from a ``finally``.
 - ``ArrayStream`` timestamped its samples with ``time.time()`` while the
   acquisition loop runs on ``local_clock()`` — the Unix epoch against
   seconds-since-boot, about 1.8e9 seconds apart. Any timing derived from the

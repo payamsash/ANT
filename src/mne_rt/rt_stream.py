@@ -32,7 +32,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Sequence, Union
 from warnings import warn
 
 import matplotlib.pyplot as plt
@@ -383,6 +383,182 @@ class ArrayStream:
         return self
 
 
+class MarkerArrayStream:
+    """Replay a fixed schedule of event markers as an irregular LSL-like stream.
+
+    The marker counterpart to :class:`ArrayStream`: it stands in for the LSL
+    outlet a stimulus program such as PsychoPy publishes, so a gated
+    neurofeedback session can be driven and tested without any LSL networking.
+    Returned by :meth:`RTStream.connect_marker_array`.
+
+    :class:`ArrayStream` cannot serve here. A marker stream is *irregularly*
+    sampled (``sfreq == 0``), and that class assumes a rate throughout: its
+    replay thread divides by ``sfreq``, its ring buffer is sized
+    ``ceil(bufsize * sfreq)`` samples, and ``get_data`` would ask for
+    ``ceil(winsize * sfreq) == 0`` samples and return the entire buffer through
+    a ``[-0:]`` slice.
+
+    Timestamps come from :func:`~mne_lsl.lsl.local_clock`, the same clock the
+    acquisition loop reads window onsets on, so a marker and a window can be
+    compared directly.
+
+    Parameters
+    ----------
+    codes : array-like of int
+        Marker codes to publish, in order.
+    onsets : array-like of float
+        When to publish each code, in seconds after :meth:`connect`.  Must be
+        the same length as ``codes`` and non-decreasing.
+    bufsize : int, default 200
+        Ring-buffer size, in markers.  Irregular streams are buffered by count,
+        not by duration.
+    ch_name : str, default "markers"
+        Name of the single marker channel.
+
+    See Also
+    --------
+    ArrayStream : The signal-side equivalent.
+    RTStream.connect_marker_array : Attaches one of these to a session.
+    RTStream.connect_marker_stream : The live LSL equivalent.
+
+    .. versionadded:: 1.2.0
+    """
+
+    def __init__(
+        self,
+        codes,
+        onsets,
+        *,
+        bufsize: int = 200,
+        ch_name: str = "markers",
+    ) -> None:
+        codes = np.asarray(codes, dtype=np.int64).ravel()
+        onsets = np.asarray(onsets, dtype=np.float64).ravel()
+        if codes.size != onsets.size:
+            raise ValueError(
+                f"`codes` and `onsets` must be the same length; got {codes.size} and {onsets.size}."
+            )
+        if np.any(np.diff(onsets) < 0):
+            raise ValueError("`onsets` must be non-decreasing.")
+        if bufsize <= 0:
+            raise ValueError(
+                f"`bufsize` is a number of markers and must be positive; got {bufsize}."
+            )
+
+        self._codes = codes
+        self._onsets = onsets
+        self._bufsize = int(bufsize)
+        self._ch_name = str(ch_name)
+
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._connected = False
+        # Preallocated like mne-lsl's own ring buffers, zeros included: a
+        # timestamp of 0.0 marks a slot no marker has reached yet.
+        self._buffer = np.zeros((self._bufsize, 1))
+        self._timestamps = np.zeros(self._bufsize)
+        self._n_new_samples = 0
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<MarkerArrayStream | {self._codes.size} markers | connected={self._connected}>"
+
+    # ------------------------------------------------------------------
+    # Connection
+    # ------------------------------------------------------------------
+
+    def connect(self, acquisition_delay: float = 0.005) -> "MarkerArrayStream":
+        """Start publishing the schedule on a background thread."""
+        if self._connected:
+            return self
+        with self._lock:
+            self._buffer = np.zeros((self._bufsize, 1))
+            self._timestamps = np.zeros(self._bufsize)
+            self._n_new_samples = 0
+        self._stop_event.clear()
+        self._connected = True
+        self._thread = threading.Thread(target=self._stream_loop, daemon=True)
+        self._thread.start()
+        return self
+
+    def disconnect(self) -> "MarkerArrayStream":
+        """Stop publishing."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+        self._connected = False
+        return self
+
+    @property
+    def connected(self) -> bool:
+        """Whether the stream is publishing."""
+        return self._connected
+
+    @property
+    def info(self) -> dict:
+        """Minimal stream description, mirroring the keys read off a real stream."""
+        return {"nchan": 1, "sfreq": 0.0, "ch_names": [self._ch_name]}
+
+    @property
+    def n_new_samples(self) -> int:
+        """Markers pushed since the last :meth:`get_data` call."""
+        return self._n_new_samples
+
+    # ------------------------------------------------------------------
+    # Publishing
+    # ------------------------------------------------------------------
+
+    def _stream_loop(self) -> None:
+        t0 = local_clock()
+        i = 0
+        while not self._stop_event.is_set() and i < self._codes.size:
+            if local_clock() - t0 >= self._onsets[i]:
+                self._push(int(self._codes[i]))
+                i += 1
+                continue
+            time.sleep(0.002)
+
+    def _push(self, code: int) -> None:
+        """Append one marker to the ring buffer, stamped on the LSL clock."""
+        now = local_clock()
+        with self._lock:
+            self._buffer[:-1] = self._buffer[1:]
+            self._buffer[-1, 0] = code
+            self._timestamps[:-1] = self._timestamps[1:]
+            self._timestamps[-1] = now
+            self._n_new_samples = min(self._n_new_samples + 1, self._bufsize)
+
+    # ------------------------------------------------------------------
+    # Reading
+    # ------------------------------------------------------------------
+
+    def get_data(
+        self,
+        winsize: Optional[int] = None,
+        picks: Optional[Union[str, list]] = None,
+        exclude: Union[str, list, tuple] = "bads",
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Retrieve the latest markers from the buffer.
+
+        Mirrors :meth:`mne_lsl.stream.StreamLSL.get_data` on an irregularly
+        sampled stream: ``winsize`` is a number of samples rather than a
+        duration, ``None`` returns the whole buffer, and
+        :attr:`n_new_samples` is reset on every call.
+        """
+        if not self._connected:
+            raise RuntimeError(
+                "The Stream is not connected. Please connect to the stream before "
+                "retrieving data from the buffer."
+            )
+        with self._lock:
+            n = self._bufsize if winsize is None else min(self._bufsize, max(0, int(winsize)))
+            data = self._buffer[self._bufsize - n :, :].T.copy()
+            ts = self._timestamps[self._bufsize - n :].copy()
+            self._n_new_samples = 0
+        return data, ts
+
+
 class RTStream(ModalityMixin):
     """Real-time Real-time M/EEG session controller.
 
@@ -623,6 +799,13 @@ class RTStream(ModalityMixin):
         """Disconnect any previously-connected stream/mock player, if present."""
         if hasattr(self, "stream") and getattr(self.stream, "connected", False):
             self.stream.disconnect()
+        # The marker stream is timestamped against the signal stream, so it
+        # cannot outlive it: keeping it would silently match markers to a
+        # different recording.
+        self._teardown_marker_stream(announce=True)
+        # Belongs to the stream just torn down; leaving it set would make the
+        # clocksync check in connect_marker_stream answer for the wrong stream.
+        self._processing_flags = None
         if getattr(self, "_mock_player", None) is not None:
             try:
                 self._mock_player.stop()
@@ -666,6 +849,7 @@ class RTStream(ModalityMixin):
         stream_name: Optional[str] = None,
         stream_source_id: Optional[str] = None,
         pick_types: Optional[str] = None,
+        processing_flags: Union[str, Sequence[str], None] = None,
         verbose: Union[bool, str, None] = None,
     ) -> None:
         """Connect to an LSL M/EEG stream.
@@ -698,6 +882,11 @@ class RTStream(ModalityMixin):
         pick_types : str | None, default None
             Channel type to keep (e.g. ``"eeg"``, ``"mag"``).
             ``None`` keeps all available channels.
+        processing_flags : str | sequence of str | None, default None
+            Forwarded to :meth:`mne_lsl.stream.StreamLSL.connect`.  Pass
+            ``"all"`` to enable ``clocksync``, which is required when a marker
+            stream published from another machine has to be aligned against
+            this one — see :meth:`connect_marker_stream`.
         verbose : bool | str | None, default None
             Override the instance-level verbosity for this call.
 
@@ -757,7 +946,15 @@ class RTStream(ModalityMixin):
         else:
             stream = Stream(bufsize=self.bufsize, source_id=self.source_id)
 
-        stream.connect(acquisition_delay=acquisition_delay, timeout=timeout)
+        stream.connect(
+            acquisition_delay=acquisition_delay,
+            processing_flags=processing_flags,
+            timeout=timeout,
+        )
+        # Recorded because StreamLSL does not expose the flags it connected
+        # with, and connect_marker_stream needs to know whether the two streams
+        # share a clock.
+        self._processing_flags = processing_flags
 
         if self.montage is not None:
             stream.set_montage(self.montage, on_missing="warn")
@@ -868,6 +1065,254 @@ class RTStream(ModalityMixin):
 
         stream.connect()
         self._finalize_stream(stream)
+
+    # ------------------------------------------------------------------
+    # Marker stream
+    # ------------------------------------------------------------------
+
+    @verbose
+    def connect_marker_stream(
+        self,
+        stream_name: Optional[str] = None,
+        source_id: Optional[str] = None,
+        marker_id: Optional[dict] = None,
+        bufsize: int = 200,
+        ch_name: Optional[str] = None,
+        timeout: float = 10.0,
+        acquisition_delay: float = 0.005,
+        processing_flags: Union[str, Sequence[str], None] = "all",
+        verbose: Union[bool, str, None] = None,
+    ) -> None:
+        """Connect the LSL stream that carries the experiment's event markers.
+
+        This is the inbound counterpart to :class:`~mne_rt.LSLSender`: a
+        stimulus program such as PsychoPy publishes trial markers on their own
+        LSL outlet, and connecting it here lets
+        :meth:`record_main` tag every analysis window with the condition that
+        was running, and optionally mute feedback outside chosen conditions.
+
+        The marker stream is kept separate from the M/EEG stream in
+        :attr:`marker_stream`; it is never mixed into the signal path.
+
+        Parameters
+        ----------
+        stream_name : str | None, default None
+            Connect by stream name.
+        source_id : str | None, default None
+            Connect by source ID.  May be given instead of, or together with,
+            ``stream_name``; together they must identify exactly one stream.
+        marker_id : dict | None, default None
+            Condition label to marker code, e.g. ``{"speech": 1, "rest": 2}``.
+            Used to label windows and to interpret ``gate_conditions``.  With
+            ``None`` the codes are their own labels.
+        bufsize : int, default 200
+            Buffer size **in markers**.  A marker outlet is irregularly
+            sampled, so a duration would carry no meaning.
+        ch_name : str | None, default None
+            Name of the channel carrying the codes.  ``None`` uses the stream's
+            first channel.
+        timeout : float, default 10.0
+            LSL connection timeout in seconds.
+        acquisition_delay : float, default 0.005
+            Seconds between acquisition polling attempts.
+        processing_flags : str | sequence of str | None, default "all"
+            Forwarded to :meth:`mne_lsl.stream.StreamLSL.connect`.  The default
+            enables ``clocksync`` — see Notes.
+        verbose : bool | str | None, default None
+
+        Raises
+        ------
+        RuntimeError
+            If no matching stream is found, or if the outlet publishes strings.
+
+        See Also
+        --------
+        connect_marker_array : Offline equivalent, for tests and demos.
+        RTEpochs.connect_to_lsl : The same idea for event-triggered epochs.
+
+        Notes
+        -----
+        **Clock synchronisation.**  Two LSL streams share a time base only once
+        their clocks are synchronised.  Without it, markers published from a
+        second machine sit at an arbitrary offset from the M/EEG data and every
+        one of them lands in the wrong window, with nothing to report it.  This
+        method therefore defaults to ``processing_flags="all"``, and warns if
+        the M/EEG stream was connected without the same treatment — pass
+        ``processing_flags="all"`` to :meth:`connect_to_lsl` as well.
+
+        **Publishing the markers.**  The outlet must be **numeric**; mne-lsl
+        refuses string streams, and ``channel_format="string"`` is what most
+        PsychoPy marker examples use.  It should label its channel, since an
+        unlabelled outlet is exposed as ``"0"``.  A minimal publisher::
+
+            from mne_lsl.lsl import StreamInfo, StreamOutlet
+
+            sinfo = StreamInfo(
+                "psychopy_markers", "Markers", 1, 0.0, "int32", "psychopy_uid"
+            )
+            sinfo.set_channel_names(["markers"])
+            outlet = StreamOutlet(sinfo)
+            outlet.push_sample([1])          # a "speech" trial
+
+        Examples
+        --------
+        Tag every window with the running condition, and reward only during
+        speech attempts::
+
+            nf.connect_to_lsl(stream_name="ANT", processing_flags="all")
+            nf.connect_marker_stream(
+                stream_name="psychopy_markers",
+                marker_id={"speech": 1, "rest": 2},
+            )
+            nf.record_main(duration=300, gate_conditions=["speech"])
+        """
+        if stream_name is None and source_id is None:
+            raise ValueError("Give `stream_name` or `source_id` to identify the marker stream.")
+        if int(bufsize) != bufsize or bufsize <= 0:
+            raise ValueError(
+                f"`bufsize` is a number of markers and must be a positive integer; got {bufsize!r}."
+            )
+
+        self._teardown_marker_stream()
+
+        logger.info("Connecting marker stream (name=%r, source_id=%r) …", stream_name, source_id)
+        stream = Stream(bufsize=int(bufsize), name=stream_name, source_id=source_id)
+        try:
+            stream.connect(
+                acquisition_delay=acquisition_delay,
+                processing_flags=processing_flags,
+                timeout=timeout,
+            )
+        except RuntimeError as exc:
+            if "string LSL streams" not in str(exc):
+                raise
+            raise RuntimeError(
+                "The marker stream publishes strings, which mne-lsl cannot read. "
+                "Publish the codes from a numeric outlet instead, e.g. "
+                "channel_format='int32' — note that PsychoPy's marker examples "
+                "commonly default to channel_format='string'."
+            ) from exc
+
+        self._attach_marker_stream(stream, marker_id=marker_id, ch_name=ch_name)
+
+        # Only meaningful against a live LSL signal stream: an array stream is
+        # local by construction and has no clock to synchronise with.
+        _signal = getattr(self, "stream", None)
+        if (
+            processing_flags is not None
+            and _signal is not None
+            and not isinstance(_signal, (ArrayStream, MarkerArrayStream))
+            and getattr(self, "_processing_flags", None) is None
+        ):
+            logger.warning(
+                "The marker stream is clock-synchronised but the M/EEG stream is not. "
+                "If the two are published from different machines their clocks differ "
+                "by an arbitrary offset, and every marker will be matched to the wrong "
+                "window without any error. Pass processing_flags='all' to "
+                "connect_to_lsl() as well, or run both on one machine."
+            )
+
+    @verbose
+    def connect_marker_array(
+        self,
+        codes,
+        onsets,
+        marker_id: Optional[dict] = None,
+        bufsize: int = 200,
+        ch_name: str = "markers",
+        verbose: Union[bool, str, None] = None,
+    ) -> None:
+        """Attach a fixed marker schedule instead of a live LSL outlet.
+
+        The marker counterpart to :meth:`connect_to_array`: drives the exact
+        same gating and window-tagging path as :meth:`connect_marker_stream`
+        with no LSL networking, which is what makes gated sessions testable and
+        demonstrable offline.
+
+        Parameters
+        ----------
+        codes : array-like of int
+            Marker codes to publish, in order.
+        onsets : array-like of float
+            When to publish each code, in seconds after this call.
+        marker_id : dict | None, default None
+            Condition label to marker code.  See :meth:`connect_marker_stream`.
+        bufsize : int, default 200
+            Buffer size in markers.
+        ch_name : str, default "markers"
+            Name of the marker channel.
+        verbose : bool | str | None, default None
+
+        Examples
+        --------
+        Alternate 10 s speech and rest blocks::
+
+            nf.connect_marker_array(
+                codes=[1, 2] * 5,
+                onsets=[10.0 * i for i in range(10)],
+                marker_id={"speech": 1, "rest": 2},
+            )
+        """
+        self._teardown_marker_stream()
+        stream = MarkerArrayStream(codes, onsets, bufsize=bufsize, ch_name=ch_name)
+        stream.connect()
+        self._attach_marker_stream(stream, marker_id=marker_id, ch_name=ch_name)
+
+    def _attach_marker_stream(self, stream: Any, *, marker_id: Optional[dict], ch_name) -> None:
+        """Store a connected marker stream and resolve its code channel.
+
+        Deliberately not :meth:`_finalize_stream`: that copies every non-dunder
+        callable of the stream onto ``self``, so a second pass would rebind
+        ``self.get_data``, ``self.disconnect`` and ``self._push`` to the marker
+        stream and quietly cut the signal path.
+        """
+        ch_names = list(stream.info["ch_names"])
+        if ch_name is None:
+            idx = 0
+        elif ch_name in ch_names:
+            idx = ch_names.index(ch_name)
+        else:
+            stream.disconnect()
+            raise ValueError(
+                f"Marker channel {ch_name!r} is not in the marker stream, which publishes "
+                f"{ch_names}. An LSL outlet that does not label its channels is exposed "
+                "by mne-lsl as '0', '1', … — either label the channel in the publisher, "
+                "or pass the name it actually has."
+            )
+
+        self.marker_stream = stream
+        self._marker_ch_idx = idx
+        self.marker_id = dict(marker_id) if marker_id else {}
+        # code -> label. Codes without a label are their own label, so an
+        # unmapped marker is still recorded rather than silently dropped.
+        self._marker_labels = {int(v): str(k) for k, v in self.marker_id.items()}
+        logger.info(
+            "Marker stream connected — channel %r of %s, %d labelled code(s).",
+            ch_names[idx],
+            ch_names,
+            len(self._marker_labels),
+        )
+
+    def _teardown_marker_stream(self, *, announce: bool = False) -> None:
+        """Disconnect any previously-connected marker stream.
+
+        ``announce`` when the caller is reconnecting the *signal* stream: the
+        marker stream is timestamped against it and cannot survive, and losing
+        one silently would mean a session that looks gated but never gates.
+        """
+        stream = getattr(self, "marker_stream", None)
+        if stream is not None:
+            if announce:
+                logger.warning(
+                    "Reconnecting the M/EEG stream also drops the marker stream, whose "
+                    "timestamps only mean anything against the recording they were taken "
+                    "with. Call connect_marker_stream() again afterwards."
+                )
+            try:
+                stream.disconnect()
+            except Exception:
+                pass
+        self.marker_stream = None
 
     # ------------------------------------------------------------------
     # Directory helpers
@@ -1000,6 +1445,7 @@ class RTStream(ModalityMixin):
         protocol: Optional[Any] = None,
         combiner: Optional[Any] = None,
         combined_name: str = "combined",
+        gate_conditions: Optional[list[str]] = None,
         save_raw: bool = False,
         save_tsv: bool = True,
         ref_channel: str = "Fp1",
@@ -1178,6 +1624,14 @@ class RTStream(ModalityMixin):
             requires ``zscore_normalize=True``; otherwise the largest-scale
             feature dominates, and a warning is issued.
             See :mod:`mne_rt.combiners`.
+        gate_conditions : list of str | None, default None
+            Restrict feedback to windows running one of these conditions, as
+            labelled by the marker stream attached with
+            :meth:`connect_marker_stream`.  ``None`` — the default — leaves
+            feedback running continuously, which is the behaviour of earlier
+            versions.  A window outside the gate still computes its features
+            and is saved, but no protocol is evaluated for it and nothing is
+            sent over OSC or LSL; see Notes.
         combined_name : str, default "combined"
             Name of the combined trace.  Must not collide with a modality name.
         save_raw : bool, default False
@@ -1375,6 +1829,53 @@ class RTStream(ModalityMixin):
                     f"Protocol key {_key!r} does not name an active modality. "
                     f"Valid keys are {_valid_keys}."
                 )
+
+        if gate_conditions is not None:
+            if getattr(self, "marker_stream", None) is None:
+                raise RuntimeError(
+                    "`gate_conditions` needs a marker stream to gate on. Call "
+                    "connect_marker_stream() (or connect_marker_array()) first."
+                )
+            gate_conditions = list(gate_conditions)
+            if not gate_conditions:
+                raise ValueError(
+                    "`gate_conditions` is empty, which would mute the entire session. "
+                    "Pass None to leave feedback ungated."
+                )
+            _known = set(getattr(self, "marker_id", {}) or {})
+            _unknown = [c for c in gate_conditions if c not in _known]
+            if _known and _unknown:
+                raise ValueError(
+                    f"Condition(s) {_unknown} are not in the marker stream's marker_id "
+                    f"map, whose labels are {sorted(_known)}. A condition that never "
+                    "matches would mute the whole session silently."
+                )
+
+        # Snapshot the marker buffer *before* the expensive setup below.
+        # Feature preparation can build forward and inverse operators, and the
+        # Qt windows take a moment more; a marker arriving inside that gap
+        # belongs to this run, so the boundary has to be drawn here rather than
+        # once the acquisition thread finally starts.
+        _marker_start_hwm = 0.0
+        _marker_start_condition: Optional[str] = None
+        if getattr(self, "marker_stream", None) is not None:
+            try:
+                _m_data, _m_ts = self.marker_stream.get_data()
+                _m_labels = getattr(self, "_marker_labels", {}) or {}
+                _m_ch = int(getattr(self, "_marker_ch_idx", 0))
+                for _i in range(_m_ts.size):
+                    _t_m = float(_m_ts[_i])
+                    if _t_m <= 0.0:
+                        continue
+                    if _t_m >= _marker_start_hwm:
+                        _marker_start_hwm = _t_m
+                        _code = int(round(float(_m_data[_m_ch, _i])))
+                        # Carried forward as the starting condition, so a
+                        # paradigm that announced the block before the run began
+                        # is not treated as having said nothing.
+                        _marker_start_condition = _m_labels.get(_code, str(_code))
+            except Exception:
+                logger.warning("Could not read the marker stream at startup.", exc_info=True)
 
         self.executor = ThreadPoolExecutor(max_workers=len(mods))
         self.mod_params_dict = {
@@ -1646,6 +2147,88 @@ class RTStream(ModalityMixin):
         # window's feature computation, so realised onsets drift from the
         # nominal index*hop grid — several seconds over a long run. Record the
         # real onset instead of letting readers infer it.
+        # ---- Marker state ----
+        # `_marker_latch` is a running variable rather than something recomputed
+        # per window from `_markers`: a window whose onset is NaN has no interval
+        # to search, and recomputing would un-latch it.
+        _marker_stream = getattr(self, "marker_stream", None)
+        _marker_labels = dict(getattr(self, "_marker_labels", {}) or {})
+        _marker_ch = int(getattr(self, "_marker_ch_idx", 0))
+        _markers: list[tuple[float, int]] = []  # (lsl timestamp, code)
+        # Condition established before the run started, used for windows that
+        # precede the first marker of this run.
+        _marker_latch: list[Optional[str]] = [_marker_start_condition]
+        _marker_hwm = [0.0]  # timestamp high-water mark; 0.0 also skips zero-fill
+        _marker_hwm_n = [0]  # samples already consumed *at* the mark
+        _marker_warned = [False, False, False]  # poll failed, overflow, >1 per window
+        _prev_win_end = [0.0]  # so each marker is attributed to exactly one window
+        _n_gated = [0]
+        _win_conditions: list[Optional[str]] = []
+        _win_marker_counts: list[int] = []
+        _win_gated: list[int] = []
+
+        def _poll_markers() -> None:
+            """Drain new markers into `_markers` and advance the latch.
+
+            Idempotent, so it is safe to call as often as convenient: a stream's
+            ``get_data`` returns the *whole* buffer every time, and the
+            high-water mark is what stops a marker being consumed twice.
+            """
+            if _marker_stream is None:
+                return
+            try:
+                # Before get_data, which resets the counter to zero.
+                n_new = int(getattr(_marker_stream, "n_new_samples", 0))
+                mdata, mts = _marker_stream.get_data()
+            except Exception:
+                # A raise here would skip done_event.set() at the end of the
+                # loop body and hang the Qt event loop forever.
+                if not _marker_warned[0]:
+                    _marker_warned[0] = True
+                    logger.warning(
+                        "Reading the marker stream failed; continuing without markers.",
+                        exc_info=True,
+                    )
+                return
+            if n_new >= mts.size and mts.size and not _marker_warned[1]:
+                _marker_warned[1] = True
+                logger.warning(
+                    "The marker buffer (%d) filled between polls, so markers were "
+                    "overwritten before they could be read. Increase `bufsize` on "
+                    "connect_marker_stream().",
+                    mts.size,
+                )
+            mark, seen_at_mark = _marker_hwm[0], _marker_hwm_n[0]
+            n_at_mark = 0
+            for i in range(mts.size):
+                ts = float(mts[i])
+                if ts <= 0.0:  # preallocated, never written
+                    continue
+                if ts < mark:
+                    continue
+                if ts == mark:
+                    # Equal timestamps are legitimate (a pushed chunk, or the
+                    # `monotize` flag), so dedupe by count rather than by value.
+                    n_at_mark += 1
+                    if n_at_mark <= seen_at_mark:
+                        continue
+                code = int(round(float(mdata[_marker_ch, i])))
+                _markers.append((ts, code))
+                _marker_latch[0] = _marker_labels.get(code, str(code))
+                if ts > _marker_hwm[0]:
+                    _marker_hwm[0] = ts
+                    _marker_hwm_n[0] = 1
+                elif ts == _marker_hwm[0]:
+                    _marker_hwm_n[0] += 1
+
+        # `_marker_start_hwm` was taken at the top of record_main, before the
+        # feature preparation and the Qt windows: anything already in the buffer
+        # then predates this run — a previous block, or the paradigm warming up.
+        # Seeding the mark rather than draining here is what stops a marker that
+        # arrives *during* setup from being consumed and thrown away.
+        _marker_hwm[0] = float(_marker_start_hwm)
+        _marker_latch[0] = _marker_start_condition
+
         _win_onsets: list[float] = []  # absolute, LSL clock
         _win_durations: list[float] = []
         _n_short: list[int] = [0]  # windows dropped for being the wrong length
@@ -1775,183 +2358,262 @@ class RTStream(ModalityMixin):
         # ---- Acquisition thread ----
 
         def _acquire() -> None:
-            t_start = local_clock()
-            _raw_chunks: list[np.ndarray] = []
-            # 50 % overlap: advance by half a window each step so consecutive
-            # NF estimates share data → smooth, correlated curve updates.
-            _hop = max(1, self.window_size_s // 2)
+            # `done_event` is the only way the Qt event loop learns the run is
+            # over (see `_pump_signal`), so anything raised in here would leave
+            # record_main spinning forever with nothing saved.
+            try:
+                t_start = local_clock()
+                _raw_chunks: list[np.ndarray] = []
+                # 50 % overlap: advance by half a window each step so consecutive
+                # NF estimates share data → smooth, correlated curve updates.
+                _hop = max(1, self.window_size_s // 2)
 
-            while local_clock() < t_start + duration:
-                # Block until half a window of new samples has arrived, then
-                # fetch the latest winsize seconds (50 % overlap with prev window).
-                # While waiting, flush any accumulated raw samples to the display
-                # queue at ~30 fps so RawPlot scrolls smoothly.
-                _t_hop = local_clock()
-                _hop_dur = _hop / self._sfreq
-                while local_clock() < _t_hop + _hop_dur:
-                    if local_clock() >= t_start + duration:
-                        break
-                    if raw_queue is not None:
-                        n_avail = self.stream.n_new_samples
-                        if n_avail >= max(1, int(0.033 * self._sfreq)):
-                            try:
-                                raw_chunk = self.stream.get_data(n_avail / self._sfreq)[0]
-                                if raw_chunk.shape[1] > 0:
-                                    raw_queue.put_nowait(raw_chunk)
-                            except (_queue.Full, Exception):
-                                pass
-                    time.sleep(0.005)
+                while local_clock() < t_start + duration:
+                    # Block until half a window of new samples has arrived, then
+                    # fetch the latest winsize seconds (50 % overlap with prev window).
+                    # While waiting, flush any accumulated raw samples to the display
+                    # queue at ~30 fps so RawPlot scrolls smoothly.
+                    _t_hop = local_clock()
+                    _hop_dur = _hop / self._sfreq
+                    while local_clock() < _t_hop + _hop_dur:
+                        if local_clock() >= t_start + duration:
+                            break
+                        if raw_queue is not None:
+                            n_avail = self.stream.n_new_samples
+                            if n_avail >= max(1, int(0.033 * self._sfreq)):
+                                try:
+                                    raw_chunk = self.stream.get_data(n_avail / self._sfreq)[0]
+                                    if raw_chunk.shape[1] > 0:
+                                        raw_queue.put_nowait(raw_chunk)
+                                except (_queue.Full, Exception):
+                                    pass
+                        # Outside the raw_queue guard: markers must be drained even
+                        # with no viewer open, or the ring buffer overflows.
+                        _poll_markers()
+                        time.sleep(0.005)
 
-                tic = time.time()
-                data, _ts = self.stream.get_data(winsize, picks=picks)
-                if estimate_delays:
-                    _acq_delays.append(time.time() - tic)
-                if data.shape[1] != self.window_size_s:
-                    # Now that window_size_s uses ceil this should only happen
-                    # when the buffer cannot supply a whole window — winsize
-                    # larger than bufsize, or the very start of a session.
-                    _n_short[0] += 1
-                    if not _short_warned[0]:
-                        _short_warned[0] = True
-                        logger.warning(
-                            "Analysis window has %d samples, expected %d — dropping it. "
-                            "If this repeats, winsize (%.3f s) likely exceeds the stream "
-                            "buffer (%.3f s).",
-                            data.shape[1],
-                            self.window_size_s,
-                            winsize,
-                            float(getattr(self, "bufsize", 0) or 0),
-                        )
-                    continue
-
-                # The timestamp buffer is preallocated with zeros, so `_ts[0]` can
-                # be a literal 0.0 rather than a clock value early in a session.
-                # Derive the onset from the tail, which the hop wait guarantees is
-                # real, and fall back to the wall clock if even that is unfilled.
-                _t_end = float(_ts[-1]) if _ts.size else 0.0
-                _win_dur = data.shape[1] / self._sfreq
-                if _t_end > 0.0:
-                    _onset = _t_end - (data.shape[1] - 1) / self._sfreq
-                else:
-                    # Still on the preallocated zeros. Substituting this host's
-                    # local_clock() would put one window on a different clock
-                    # from the rest whenever the sender's differs, quietly
-                    # shifting every session-relative onset. Unknown is honest.
-                    _onset = float("nan")
-                _win_onsets.append(_onset)
-                _win_durations.append(_win_dur)
-
-                _n_total_windows[0] += 1
-                if track_artifact_rate:
-                    if np.any(np.abs(data) > _artifact_threshold_raw):
-                        _n_artifact_windows[0] += 1
-
-                _raw_chunks.append(data.copy())
-                data = _correct(data)
-
-                if track_snr:
-                    from mne_rt.tools import compute_bandpower
-
-                    _sig = compute_bandpower(data, self._sfreq, _snr_frange, method="welch")
-                    _all = compute_bandpower(
-                        data, self._sfreq, (0.5, self._sfreq / 2 - 1), method="welch"
-                    )
-                    _noise = _all.mean() - _sig.mean()
-                    _snr_data.append(float(10.0 * np.log10(_sig.mean() / (abs(_noise) + 1e-300))))
-
-                futures = [
-                    self.executor.submit(nf_fns[i], data, **precomps[i]) for i in range(len(specs))
-                ]
-                _crossed_map: dict = {}
-                for m, fut in zip(mods, futures):
-                    nf_val, m_delay = fut.result()
-                    nf_val = _apply_zscore(m, float(nf_val))
-                    # EMA smoothing: seed on first window, then blend
-                    if m not in _ema:
-                        _ema[m] = nf_val
-                    else:
-                        nf_val = signal_smoothing * nf_val + (1.0 - signal_smoothing) * _ema[m]
-                        _ema[m] = nf_val
-                    nf_data[m].append(nf_val)
-                    if m in _proto_map:
-                        _crossed, _mag = _proto_map[m].evaluate(nf_val)
-                        reward_data[m].append(_mag if _crossed else 0.0)
-                        _crossed_map[m] = _crossed
+                    tic = time.time()
+                    data, _ts = self.stream.get_data(winsize, picks=picks)
                     if estimate_delays:
-                        _meth_delays[m].append(m_delay)
-
-                if combiner is not None:
-                    # _apply_zscore passes values through unchanged until each
-                    # modality has `zscore_warmup` windows behind it. Combining
-                    # during that period would mix native units — the very thing
-                    # zscore_normalize=True is meant to prevent — and the combined
-                    # trace would then jump by orders of magnitude the moment
-                    # normalisation engaged, fitting any attached protocol's
-                    # baseline on meaningless numbers. Hold at 0.0 until every
-                    # feature is normalised, as ZScoredNormCombiner does.
-                    _warm = not zscore_normalize or all(_z_n[m] >= zscore_warmup for m in mods)
-                    if _warm:
-                        try:
-                            _mixed = float(combiner.combine({m: nf_data[m][-1] for m in mods}))
-                        except Exception:
-                            # User-supplied code; a raise here would skip
-                            # done_event.set() below and hang the Qt loop.
-                            logger.exception(
-                                "%s.combine() failed; using 0.0 for this window.",
-                                type(combiner).__name__,
+                        _acq_delays.append(time.time() - tic)
+                    if data.shape[1] != self.window_size_s:
+                        # Now that window_size_s uses ceil this should only happen
+                        # when the buffer cannot supply a whole window — winsize
+                        # larger than bufsize, or the very start of a session.
+                        _n_short[0] += 1
+                        if not _short_warned[0]:
+                            _short_warned[0] = True
+                            logger.warning(
+                                "Analysis window has %d samples, expected %d — dropping it. "
+                                "If this repeats, winsize (%.3f s) likely exceeds the stream "
+                                "buffer (%.3f s).",
+                                data.shape[1],
+                                self.window_size_s,
+                                winsize,
+                                float(getattr(self, "bufsize", 0) or 0),
                             )
-                            _mixed = 0.0
+                        continue
+
+                    # The timestamp buffer is preallocated with zeros, so `_ts[0]` can
+                    # be a literal 0.0 rather than a clock value early in a session.
+                    # Derive the onset from the tail, which the hop wait guarantees is
+                    # real, and fall back to the wall clock if even that is unfilled.
+                    _t_end = float(_ts[-1]) if _ts.size else 0.0
+                    _win_dur = data.shape[1] / self._sfreq
+                    if _t_end > 0.0:
+                        _onset = _t_end - (data.shape[1] - 1) / self._sfreq
                     else:
-                        _mixed = 0.0
-                    nf_data[combined_name].append(_mixed)
-                    if _warm and combined_name in _proto_map:
-                        _crossed, _mag = _proto_map[combined_name].evaluate(_mixed)
-                        reward_data[combined_name].append(_mag if _crossed else 0.0)
-                        _crossed_map[combined_name] = _crossed
-                    elif combined_name in _proto_map:
-                        reward_data[combined_name].append(0.0)
+                        # Still on the preallocated zeros. Substituting this host's
+                        # local_clock() would put one window on a different clock
+                        # from the rest whenever the sender's differs, quietly
+                        # shifting every session-relative onset. Unknown is honest.
+                        _onset = float("nan")
+                    _win_onsets.append(_onset)
+                    _win_durations.append(_win_dur)
 
-                _vals = [nf_data[m][-1] for m in _display_mods]
-                _threshs = [
-                    getattr(_proto_map[m], "current_threshold", None) if m in _proto_map else None
-                    for m in _display_mods
-                ]
-                _rewards = [_crossed_map.get(m) for m in _display_mods]
-                try:
-                    nf_queue.put_nowait((_vals, _threshs, _rewards))
-                except _queue.Full:
-                    pass
+                    # Poll again now that the window's end is known: the last poll in
+                    # the hop wait can be 5 ms stale, and a marker arriving in that
+                    # gap belongs to this window, not the next one.
+                    _poll_markers()
+                    # From the newest marker at or before this window's end, not
+                    # from the free-running latch: the poll above also consumes
+                    # markers that arrived after `_t_end` (the M/EEG buffer lags
+                    # on chunked devices), and letting one of those label this
+                    # window would open the gate a window early and disagree with
+                    # `n_markers`. A window with an unknown end has no interval
+                    # to search, so it keeps the latch.
+                    if _t_end > 0.0:
+                        _condition = _marker_start_condition
+                        for _t_m, _c_m in reversed(_markers):
+                            if _t_m <= _t_end:
+                                _condition = _marker_labels.get(_c_m, str(_c_m))
+                                break
+                    else:
+                        _condition = _marker_latch[0]
+                    # Count over `(previous window end, this window end]`, not
+                    # over the window itself. Windows overlap by half, so a
+                    # contained marker would be counted twice; this partitions
+                    # the run, and the column sums to the number received.
+                    # `_t_end` rather than `_onset + _win_dur`, which overshoots
+                    # by one sample.
+                    if _t_end > 0.0:
+                        _lo = _prev_win_end[0] if _prev_win_end[0] > 0.0 else _onset
+                        _n_win_markers = sum(1 for _t_m, _ in _markers if _lo < _t_m <= _t_end)
+                        _prev_win_end[0] = _t_end
+                    else:
+                        _n_win_markers = 0
+                    if _n_win_markers > 1 and not _marker_warned[2]:
+                        _marker_warned[2] = True
+                        logger.warning(
+                            "%d markers arrived within one analysis window. The trial "
+                            "rate is outrunning the neurofeedback cadence, so only the "
+                            "last one labels the window.",
+                            _n_win_markers,
+                        )
+                    _in_gate = gate_conditions is None or _condition in gate_conditions
+                    if not _in_gate:
+                        _n_gated[0] += 1
+                    if _marker_stream is not None:
+                        # Only when a marker stream is attached: appending
+                        # placeholders otherwise would add three all-empty
+                        # columns to every existing user's table.
+                        _win_conditions.append(_condition)
+                        _win_marker_counts.append(_n_win_markers)
+                        _win_gated.append(0 if _in_gate else 1)
 
-                if osc_sender is not None:
+                    _n_total_windows[0] += 1
+                    if track_artifact_rate:
+                        if np.any(np.abs(data) > _artifact_threshold_raw):
+                            _n_artifact_windows[0] += 1
+
+                    _raw_chunks.append(data.copy())
+                    data = _correct(data)
+
+                    if track_snr:
+                        from mne_rt.tools import compute_bandpower
+
+                        _sig = compute_bandpower(data, self._sfreq, _snr_frange, method="welch")
+                        _all = compute_bandpower(
+                            data, self._sfreq, (0.5, self._sfreq / 2 - 1), method="welch"
+                        )
+                        _noise = _all.mean() - _sig.mean()
+                        _snr_data.append(
+                            float(10.0 * np.log10(_sig.mean() / (abs(_noise) + 1e-300)))
+                        )
+
+                    futures = [
+                        self.executor.submit(nf_fns[i], data, **precomps[i])
+                        for i in range(len(specs))
+                    ]
+                    _crossed_map: dict = {}
+                    for m, fut in zip(mods, futures):
+                        nf_val, m_delay = fut.result()
+                        nf_val = _apply_zscore(m, float(nf_val))
+                        # EMA smoothing: seed on first window, then blend
+                        if m not in _ema:
+                            _ema[m] = nf_val
+                        else:
+                            nf_val = signal_smoothing * nf_val + (1.0 - signal_smoothing) * _ema[m]
+                            _ema[m] = nf_val
+                        nf_data[m].append(nf_val)
+                        if m in _proto_map:
+                            # `_apply_zscore` passes the raw value through until this
+                            # modality has `zscore_warmup` windows behind it, so
+                            # evaluating during that period rewards native-unit values
+                            # against a z-score-calibrated threshold. The gate is
+                            # per-modality: `all(...)` would block one band's protocol
+                            # because another band had not warmed yet.
+                            _m_warm = not zscore_normalize or _z_n[m] >= zscore_warmup
+                            if _in_gate and _m_warm:
+                                _crossed, _mag = _proto_map[m].evaluate(nf_val)
+                                reward_data[m].append(_mag if _crossed else 0.0)
+                                _crossed_map[m] = _crossed
+                            else:
+                                # Not evaluating is what "do not update" means for a
+                                # stateful protocol; the placeholder keeps this list
+                                # the same length as nf_data[m].
+                                reward_data[m].append(0.0)
+                        if estimate_delays:
+                            _meth_delays[m].append(m_delay)
+
+                    if combiner is not None:
+                        # _apply_zscore passes values through unchanged until each
+                        # modality has `zscore_warmup` windows behind it. Combining
+                        # during that period would mix native units — the very thing
+                        # zscore_normalize=True is meant to prevent — and the combined
+                        # trace would then jump by orders of magnitude the moment
+                        # normalisation engaged, fitting any attached protocol's
+                        # baseline on meaningless numbers. Hold at 0.0 until every
+                        # feature is normalised, as ZScoredNormCombiner does.
+                        _warm = not zscore_normalize or all(_z_n[m] >= zscore_warmup for m in mods)
+                        if _warm:
+                            try:
+                                _mixed = float(combiner.combine({m: nf_data[m][-1] for m in mods}))
+                            except Exception:
+                                # User-supplied code; a raise here would skip
+                                # done_event.set() below and hang the Qt loop.
+                                logger.exception(
+                                    "%s.combine() failed; using 0.0 for this window.",
+                                    type(combiner).__name__,
+                                )
+                                _mixed = 0.0
+                        else:
+                            _mixed = 0.0
+                        nf_data[combined_name].append(_mixed)
+                        if _warm and _in_gate and combined_name in _proto_map:
+                            _crossed, _mag = _proto_map[combined_name].evaluate(_mixed)
+                            reward_data[combined_name].append(_mag if _crossed else 0.0)
+                            _crossed_map[combined_name] = _crossed
+                        elif combined_name in _proto_map:
+                            reward_data[combined_name].append(0.0)
+
+                    _vals = [nf_data[m][-1] for m in _display_mods]
+                    _threshs = [
+                        getattr(_proto_map[m], "current_threshold", None)
+                        if m in _proto_map
+                        else None
+                        for m in _display_mods
+                    ]
+                    _rewards = [_crossed_map.get(m) for m in _display_mods]
                     try:
-                        osc_sender.send_all(_osc_names, _vals)
-                    except Exception:
-                        # Feedback delivery must never take the acquisition
-                        # thread down, but silence for a whole session is worse:
-                        # report the first failure, then stay quiet.
-                        if not _send_warned[0]:
-                            _send_warned[0] = True
-                            logger.warning(
-                                "OSC send failed; continuing without OSC feedback.",
-                                exc_info=True,
-                            )
+                        nf_queue.put_nowait((_vals, _threshs, _rewards))
+                    except _queue.Full:
+                        pass
 
-                if lsl_sender is not None:
-                    try:
-                        lsl_sender.push(_display_mods, _vals)
-                    except Exception:
-                        if not _send_warned[1]:
-                            _send_warned[1] = True
-                            logger.warning(
-                                "LSL push failed; continuing without LSL feedback.",
-                                exc_info=True,
-                            )
+                    if osc_sender is not None and _in_gate:
+                        try:
+                            osc_sender.send_all(_osc_names, _vals)
+                        except Exception:
+                            # Feedback delivery must never take the acquisition
+                            # thread down, but silence for a whole session is worse:
+                            # report the first failure, then stay quiet.
+                            if not _send_warned[0]:
+                                _send_warned[0] = True
+                                logger.warning(
+                                    "OSC send failed; continuing without OSC feedback.",
+                                    exc_info=True,
+                                )
 
-                _push_topo(data)
-                _push_brain(data)
+                    if lsl_sender is not None and _in_gate:
+                        try:
+                            lsl_sender.push(_display_mods, _vals)
+                        except Exception:
+                            if not _send_warned[1]:
+                                _send_warned[1] = True
+                                logger.warning(
+                                    "LSL push failed; continuing without LSL feedback.",
+                                    exc_info=True,
+                                )
 
-            done_event.set()
-            self._raw_chunks = _raw_chunks
+                    _push_topo(data)
+                    _push_brain(data)
+
+            except BaseException:
+                logger.exception("Acquisition failed; ending the run.")
+                raise
+            finally:
+                done_event.set()
+                self._raw_chunks = _raw_chunks
 
         # ---- Start acquisition thread ----
 
@@ -2106,6 +2768,30 @@ class RTStream(ModalityMixin):
         self.window_onsets = _win_onsets
         self.window_durations = _win_durations
         self.n_short_windows = _n_short[0]
+        self.window_conditions = _win_conditions
+        self.window_marker_counts = _win_marker_counts
+        self.window_gated = _win_gated
+        self.markers = list(_markers)
+        self.gate_conditions = gate_conditions
+        self.n_gated_windows = _n_gated[0]
+
+        # A gate that never opened looks exactly like a working session from the
+        # outside: features are computed and saved, the plot updates, and the
+        # subject simply never receives anything. Say so.
+        if (
+            gate_conditions is not None
+            and _n_total_windows[0] > 0
+            and _n_gated[0] == _n_total_windows[0]
+        ):
+            logger.warning(
+                "Every one of the %d windows was outside gate_conditions=%s, so no "
+                "feedback was delivered for the entire run. %d marker(s) arrived. "
+                "Check that the paradigm publishes the expected codes, and that both "
+                "streams are clock-synchronised if they come from different machines.",
+                _n_total_windows[0],
+                gate_conditions,
+                len(_markers),
+            )
         if estimate_delays:
             self.acq_delays = _acq_delays
             self.artifact_delays = _art_delays
@@ -3081,6 +3767,7 @@ class RTStream(ModalityMixin):
         """
         if hasattr(self, "stream") and getattr(self.stream, "connected", False):
             self.stream.disconnect()
+        self._teardown_marker_stream()
         if hasattr(self, "_mock_player"):
             try:
                 self._mock_player.stop()
@@ -3152,6 +3839,12 @@ class RTStream(ModalityMixin):
                     # Unconditional: when every window is dropped this is the
                     # only durable record of why the session came out empty.
                     "n_short_windows": int(getattr(self, "n_short_windows", 0)),
+                    # Same argument as n_short_windows: when the gate never
+                    # opened, this is the only durable record of why the subject
+                    # received nothing.
+                    "gate_conditions": getattr(self, "gate_conditions", None),
+                    "n_gated_windows": int(getattr(self, "n_gated_windows", 0)),
+                    "marker_id": dict(getattr(self, "marker_id", {}) or {}),
                     "start_time": start_iso,
                     "end_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 },
@@ -3167,14 +3860,18 @@ class RTStream(ModalityMixin):
             _n_rows = max((len(v) for v in self.nf_data.values()), default=0)
             _onsets = list(getattr(self, "window_onsets", []) or [])[:_n_rows]
             _durations = list(getattr(self, "window_durations", []) or [])[:_n_rows]
+            _conditions = list(getattr(self, "window_conditions", []) or [])[:_n_rows]
+            _marker_counts = list(getattr(self, "window_marker_counts", []) or [])[:_n_rows]
+            _gated = list(getattr(self, "window_gated", []) or [])[:_n_rows]
             _finite = [t for t in _onsets if np.isfinite(t)]
+            _windows: dict = {}
             if _finite:
                 _t0 = _finite[0]
                 payload["meta"]["t0_lsl"] = _t0
                 # The acquisition stream's own LSL clock. With a remote sender and
                 # no clocksync this is the sender's, not this host's.
                 payload["meta"]["clock"] = "lsl_stream_clock"
-                payload["windows"] = {
+                _windows = {
                     # Session-relative, so the first window is exactly 0.0.
                     # `None` where the stream had not timestamped the window yet.
                     "onset": [None if not np.isfinite(t) else _ser(t - _t0) for t in _onsets],
@@ -3182,6 +3879,24 @@ class RTStream(ModalityMixin):
                     # Absolute, for alignment against a stimulus log without
                     # having to reapply the offset.
                     "onset_lsl": [None if not np.isfinite(t) else _ser(t) for t in _onsets],
+                }
+            # Independent of onset finiteness: a session whose onsets are all
+            # unknown still ran its gate, and losing that record would hide why
+            # the subject received nothing.
+            if _conditions:
+                _windows["condition"] = _conditions
+                _windows["n_markers"] = [int(v) for v in _marker_counts]
+                _windows["gated"] = [int(v) for v in _gated]
+            if _windows:
+                payload["windows"] = _windows
+            # The markers themselves, as received. Every per-window column above
+            # is a lossy projection of this: a marker inside a window that was
+            # dropped for being short appears in no column at all.
+            _markers = list(getattr(self, "markers", []) or [])
+            if _markers:
+                payload["markers"] = {
+                    "onset_lsl": [_ser(t) for t, _ in _markers],
+                    "code": [int(c) for _, c in _markers],
                 }
 
             snr = getattr(self, "snr_data", [])
@@ -3447,5 +4162,10 @@ class RTStream(ModalityMixin):
             try:
                 if getattr(self.stream, "connected", False):
                     self.stream.disconnect()
+            except Exception:
+                pass
+        if getattr(self, "marker_stream", None) is not None:
+            try:
+                self.marker_stream.disconnect()
             except Exception:
                 pass

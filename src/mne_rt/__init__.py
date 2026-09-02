@@ -69,7 +69,7 @@ from mne_rt.protocols import (
     ZScoreProtocol,
 )
 from mne_rt.rt_epochs import RTEpochs
-from mne_rt.rt_stream import ArrayStream, RTStream
+from mne_rt.rt_stream import ArrayStream, MarkerArrayStream, RTStream
 from mne_rt.source import (  # noqa: F401 — public API
     ROI,
     ROI_ALIASES,
@@ -97,6 +97,7 @@ from mne_rt.viz import (
 __all__ = [
     "RTStream",
     "ArrayStream",
+    "MarkerArrayStream",
     "RTEpochs",
     "RTDecode",
     "BrainPlot",
