@@ -15,6 +15,7 @@ Core
    mne_rt.RTStream
    mne_rt.RTEpochs
    mne_rt.ArrayStream
+   mne_rt.MarkerArrayStream
 
 Decoding
 --------

@@ -284,6 +284,11 @@ def _write_nf_beh_tsv(
 #: coarse to align a window against a stimulus log.
 _TIME_COLUMNS = ("onset", "duration")
 
+#: Trial-level columns, written next to the timing they describe and ahead of
+#: the features. Each appears only when the session recorded it, so a run with
+#: no marker stream produces the same table as before.
+_MARKER_COLUMNS = ("condition", "n_markers", "gated")
+
 
 def _nf_columns(*, nf_data, windows=None, reward=None, snr=None):
     """Assemble the ordered column names and their per-window series.
@@ -293,7 +298,7 @@ def _nf_columns(*, nf_data, windows=None, reward=None, snr=None):
     """
     columns: list[str] = []
     combined: dict[str, list] = {}
-    for name in _TIME_COLUMNS:
+    for name in _TIME_COLUMNS + _MARKER_COLUMNS:
         if windows and windows.get(name):
             columns.append(name)
             combined[name] = list(windows[name])
@@ -380,6 +385,11 @@ def write_nf_beh_tsv(
                     row.append("n/a")
                     continue
                 val = vals[i]
+                if val is None:
+                    # BIDS spells a missing value "n/a"; str(None) would write
+                    # the literal word "None" into the table.
+                    row.append("n/a")
+                    continue
                 if isinstance(val, (int, float, np.floating, np.integer)):
                     fmt = "%.6f" if col in _TIME_COLUMNS else "%.6g"
                     row.append(fmt % float(val))
@@ -435,6 +445,41 @@ def _column_descriptions(columns: list, meta: dict) -> dict:
                 "LongName": "Analysis window duration",
                 "Description": "Length of the analysis window.",
                 "Units": "s",
+            }
+        elif col == "condition":
+            descriptions[col] = {
+                "LongName": "Experimental condition",
+                "Description": (
+                    "Label of the most recent marker at or before the end of this "
+                    "window, from the marker stream's marker_id map. Latched, so it "
+                    "is defined for every window after the first marker."
+                ),
+            }
+            _levels = {k: k for k in sorted(meta.get("marker_id", {}) or {})}
+            if _levels:
+                # Omitted rather than written as null: a reader doing
+                # ``Levels.items()`` would get an AttributeError, and codes with
+                # no label are recorded as the code itself and never appear here.
+                descriptions[col]["Levels"] = _levels
+        elif col == "n_markers":
+            descriptions[col] = {
+                "LongName": "Markers received for this window",
+                "Description": (
+                    "Number of markers that arrived since the previous window ended. "
+                    "Windows overlap by half, so counting markers *inside* each window "
+                    "would count most of them twice; this partitions the run, and the "
+                    "column sums to the number of markers received."
+                ),
+            }
+        elif col == "gated":
+            descriptions[col] = {
+                "LongName": "Feedback withheld",
+                "Description": (
+                    "1 when the window fell outside gate_conditions, so no protocol "
+                    "was evaluated and nothing was sent to the stimulus program. The "
+                    "feature value is still recorded."
+                ),
+                "Levels": {"0": "feedback delivered", "1": "feedback withheld"},
             }
         elif col == "snr_db":
             descriptions[col] = {
