@@ -15,6 +15,13 @@ Typical workflow
     rt.connect_to_lsl()
     rt.run(n_trials=80, show_erp=True)
 
+Events may instead arrive on a separate LSL marker stream -- what a PsychoPy
+paradigm publishes -- in which case ``event_channels`` names a channel of
+*that* stream::
+
+    rt = RTEpochs(event_id={"go": 1}, event_channels="markers")
+    rt.connect_to_lsl(stream_name="ANT", event_stream_name="psychopy_markers")
+
 Classes
 -------
 RTEpochs
@@ -26,7 +33,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import defaultdict
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Sequence, Union
 
 import mne
 import numpy as np
@@ -55,8 +62,10 @@ class RTEpochs:
     event_id : dict[str, int]
         Condition label → marker integer, e.g. ``{"target": 1, "standard": 2}``.
     event_channels : str or list of str
-        Channel(s) in the LSL stream that carry the event codes (e.g.
-        ``"STI 014"`` for a STIM channel, or ``"stim"``).
+        Channel(s) carrying the event codes.  Without an event stream these
+        must be ``"stim"``-type channels of the M/EEG stream itself (e.g.
+        ``"STI 014"``).  When :meth:`connect_to_lsl` is given an event stream
+        they name channels of *that* stream instead -- see its Notes.
     tmin : float, default -0.2
         Epoch start in seconds relative to the event.
     tmax : float, default 0.8
@@ -77,8 +86,9 @@ class RTEpochs:
             def on_trial(n_accepted, data, event_code, condition):
                 ...
 
-        ``new_data`` is ``(n_new, n_channels, n_times)``; ``all_events`` is
-        the current :attr:`~mne_lsl.stream.EpochsStream.events` array.
+        ``data`` is the single accepted epoch, ``(n_channels, n_times)``;
+        ``event_code`` is its integer marker and ``condition`` the matching
+        ``event_id`` label.
     verbose : bool or str or None, default None
 
     Attributes
@@ -86,6 +96,10 @@ class RTEpochs:
     epochs_stream_ : mne_lsl.stream.EpochsStream or None
         The underlying :class:`~mne_lsl.stream.EpochsStream` after
         :meth:`connect_to_lsl` has been called.
+    event_stream_ : mne_lsl.stream.StreamLSL or None
+        The separate marker stream, when :meth:`connect_to_lsl` was asked for
+        one.  ``None`` when the events come from a stim channel of the M/EEG
+        stream.
     n_accepted_ : int
         Running count of accepted epochs since :meth:`run` started.
 
@@ -139,6 +153,7 @@ class RTEpochs:
         self._stream: Optional[StreamLSL] = None
         self._player: Optional[PlayerLSL] = None
         self.epochs_stream_: Optional[EpochsStream] = None
+        self.event_stream_: Optional[StreamLSL] = None
         self.n_accepted_: int = 0
         self._stop_event = threading.Event()
         self._connected = False
@@ -158,6 +173,10 @@ class RTEpochs:
         mock_lsl: bool = False,
         fname: Optional[str] = None,
         timeout: float = 10.0,
+        event_stream_name: Optional[str] = None,
+        event_source_id: Optional[str] = None,
+        event_stream_bufsize: int = 200,
+        processing_flags: Optional[Union[str, Sequence[str]]] = None,
         verbose: Union[bool, str, None] = None,
     ) -> "RTEpochs":
         """Connect to an LSL stream and set up the EpochsStream.
@@ -172,14 +191,85 @@ class RTEpochs:
             Path to a ``.fif`` file (required when ``mock_lsl=True``).
         timeout : float
             LSL connection timeout in seconds.
+        event_stream_name : str or None, default None
+            Name of a separate LSL stream carrying the event codes -- the
+            marker outlet of a PsychoPy paradigm, for instance.  Leaving both
+            this and ``event_source_id`` as ``None`` keeps the events on a
+            stim channel of the M/EEG stream itself, which is the behaviour of
+            earlier versions.
+        event_source_id : str or None, default None
+            Source ID of the event stream.  May be given instead of, or
+            together with, ``event_stream_name``; the two must together
+            identify exactly one stream.
+        event_stream_bufsize : int, default 200
+            Event-stream buffer size **in samples**.  A marker outlet is
+            irregularly sampled, so a duration would carry no meaning.
+        processing_flags : str or sequence of str or None, default None
+            Forwarded to :meth:`mne_lsl.stream.StreamLSL.connect` for every
+            stream opened here.  ``None`` selects ``"all"`` when an event
+            stream is requested, and no flags otherwise -- see Notes.
         verbose : bool or str or None
 
         Returns
         -------
         self : RTEpochs
+
+        Notes
+        -----
+        **Clock synchronisation.**  Two LSL streams share a time base only once
+        their clocks are synchronised, so when an event stream is requested
+        both streams are connected with ``processing_flags="all"``
+        (``clocksync``, ``dejitter``, ``monotize``).  Without it, markers
+        published from a second machine sit at an arbitrary offset from the
+        M/EEG data and every epoch is cut in the wrong place, silently.  Pass
+        ``processing_flags`` explicitly to override.
+
+        **Publishing the markers.**  The outlet must satisfy three constraints,
+        each of which otherwise fails confusingly or not at all:
+
+        - it must be **numeric**.  mne-lsl refuses string streams outright, and
+          ``channel_format="string"`` is what most PsychoPy marker examples
+          use -- publish ``"int32"`` instead;
+        - it should **label its channel**, since an outlet that does not is
+          exposed as ``"0"``, ``"1"``, ... and ``event_channels`` has to match;
+        - the codes must be positive integers no greater than 32767, matching
+          the values of ``event_id``.
+
+        A minimal publisher, which doubles as the reference for the paradigm
+        side::
+
+            from mne_lsl.lsl import StreamInfo, StreamOutlet
+
+            sinfo = StreamInfo(
+                "psychopy_markers", "Markers", 1, 0.0, "int32", "psychopy_uid"
+            )
+            sinfo.set_channel_names(["markers"])
+            outlet = StreamOutlet(sinfo)
+            outlet.push_sample([1])          # a "go" trial
+
+        Examples
+        --------
+        Events from a stim channel of the M/EEG stream itself::
+
+            rt = RTEpochs(event_id={"target": 1}, event_channels="STI 014")
+            rt.connect_to_lsl(mock_lsl=True, fname="sample_raw.fif")
+
+        Events from a PsychoPy marker outlet::
+
+            rt = RTEpochs(event_id={"go": 1, "stop": 2}, event_channels="markers")
+            rt.connect_to_lsl(
+                stream_name="ANT", event_stream_name="psychopy_markers"
+            )
         """
         if verbose is not None:
             set_log_level(verbose)
+
+        # Clear handles from any previous connect: without this a second call
+        # made *without* an event stream would still hand the disconnected one
+        # from the first call to EpochsStream, which refuses it.
+        self.epochs_stream_ = None
+        self.event_stream_ = None
+        self._connected = False
 
         if mock_lsl:
             if fname is None:
@@ -189,31 +279,126 @@ class RTEpochs:
             time.sleep(1.5)
             stream_name = "mne_rt_mock"
 
+        want_event_stream = event_stream_name is not None or event_source_id is not None
+        if want_event_stream:
+            if int(event_stream_bufsize) != event_stream_bufsize or event_stream_bufsize <= 0:
+                raise ValueError(
+                    "event_stream_bufsize is a number of samples and must be a "
+                    f"positive integer; got {event_stream_bufsize!r}."
+                )
+            event_stream_bufsize = int(event_stream_bufsize)
+            if processing_flags is None:
+                # Two streams share a time base only once their clocks are synced.
+                processing_flags = "all"
+
         logger.info("RTEpochs: connecting StreamLSL …")
         self._stream = StreamLSL(bufsize=4.0, name=stream_name)
-        self._stream.connect(acquisition_delay=0.005, timeout=timeout)
-        logger.info(
-            "RTEpochs: stream connected — %d ch @ %.0f Hz",
-            self._stream.info["nchan"],
-            self._stream.info["sfreq"],
-        )
+        try:
+            self._stream.connect(
+                acquisition_delay=0.005,
+                processing_flags=processing_flags,
+                timeout=timeout,
+            )
+            logger.info(
+                "RTEpochs: stream connected — %d ch @ %.0f Hz",
+                self._stream.info["nchan"],
+                self._stream.info["sfreq"],
+            )
 
-        logger.info("RTEpochs: setting up EpochsStream …")
-        self.epochs_stream_ = EpochsStream(
-            stream=self._stream,
-            bufsize=self.bufsize,
-            event_id=self.event_id,
-            event_channels=self.event_channels,
-            tmin=self.tmin,
-            tmax=self.tmax,
-            baseline=self.baseline,
-            picks=self.picks,
-            reject=self.reject,
-        ).connect(acquisition_delay=0.005)
+            if want_event_stream:
+                self._connect_event_stream(
+                    name=event_stream_name,
+                    source_id=event_source_id,
+                    bufsize=event_stream_bufsize,
+                    processing_flags=processing_flags,
+                    timeout=timeout,
+                )
+
+            logger.info("RTEpochs: setting up EpochsStream …")
+            self.epochs_stream_ = EpochsStream(
+                stream=self._stream,
+                bufsize=self.bufsize,
+                event_id=self.event_id,
+                event_channels=self.event_channels,
+                event_stream=self.event_stream_,
+                tmin=self.tmin,
+                tmax=self.tmax,
+                baseline=self.baseline,
+                picks=self.picks,
+                reject=self.reject,
+            ).connect(acquisition_delay=0.005)
+        except BaseException:
+            # Anything raised past this point leaves a running player and one
+            # or two connected streams behind, with ``_connected`` still False
+            # so the caller has no handle to clean them up with.
+            self.disconnect()
+            raise
 
         self._connected = True
         logger.info("RTEpochs: EpochsStream connected.")
         return self
+
+    def _connect_event_stream(
+        self,
+        *,
+        name: Optional[str],
+        source_id: Optional[str],
+        bufsize: int,
+        processing_flags: Optional[Union[str, Sequence[str]]],
+        timeout: float,
+    ) -> None:
+        """Connect the separate LSL stream carrying the event codes.
+
+        Kept apart from :meth:`connect_to_lsl` only so its two failure modes
+        can be reported against the *event* stream; mne-lsl raises for both,
+        but from a context that does not say which of the two streams is at
+        fault.
+        """
+        logger.info(
+            "RTEpochs: connecting event StreamLSL (name=%r, source_id=%r) …",
+            name,
+            source_id,
+        )
+        # Held from construction onwards, so that a failure anywhere below is
+        # still reachable by disconnect(). StreamLSL.connect() can raise with an
+        # inlet already open and an acquisition thread already running.
+        stream = StreamLSL(bufsize=bufsize, name=name, source_id=source_id)
+        self.event_stream_ = stream
+        try:
+            stream.connect(
+                acquisition_delay=0.005,
+                processing_flags=processing_flags,
+                timeout=timeout,
+            )
+        except RuntimeError as exc:
+            if "string LSL streams" not in str(exc):
+                raise
+            raise RuntimeError(
+                "The event stream publishes strings, which mne-lsl cannot read. "
+                "Publish the marker codes from a numeric outlet instead, e.g. "
+                "channel_format='int32' — note that PsychoPy's marker examples "
+                "commonly default to channel_format='string'."
+            ) from exc
+        available = list(stream.info["ch_names"])
+        wanted = (
+            [self.event_channels]
+            if isinstance(self.event_channels, str)
+            else list(self.event_channels)
+        )
+        missing = [ch for ch in wanted if ch not in available]
+        if missing:
+            raise ValueError(
+                f"Event channel(s) {missing} are not in the event stream, which "
+                f"publishes {available}. An LSL outlet that does not label its "
+                "channels is exposed by mne-lsl as '0', '1', … — either label "
+                "the channel in the publisher, or pass the name it actually has."
+            )
+        logger.info(
+            "RTEpochs: event stream connected — %d ch @ %.0f Hz, using %s",
+            stream.info["nchan"],
+            stream.info["sfreq"],
+            wanted,
+        )
 
     # ------------------------------------------------------------------
     # Main loop
@@ -275,7 +460,10 @@ class RTEpochs:
 
         # Pre-allocate epoch buffer — avoids O(N²) np.stack per trial
         n_ch = es.info["nchan"]
-        n_times = int(round((self.tmax - self.tmin) * es.info["sfreq"])) + 1
+        # es.times is authoritative: mne-lsl builds ceil((tmax - tmin) * sfreq)
+        # samples with endpoint=False, one fewer than round(...) + 1. Sizing the
+        # buffer ourselves left a trailing all-zero sample on every epoch.
+        n_times = es.times.size
         self._buf_ = np.zeros((n_trials, n_ch, n_times), dtype=np.float32)
         self._cond_list_ = []
         self._code_list_ = []
@@ -332,17 +520,20 @@ class RTEpochs:
         self._stop_event.set()
 
     def disconnect(self) -> None:
-        """Disconnect EpochsStream, StreamLSL, and stop any mock player."""
+        """Disconnect EpochsStream, both StreamLSLs, and stop any mock player."""
+        # The EpochsStream registers itself on the stream(s) it reads and
+        # unregisters on disconnect, so it has to be torn down first.
         if self.epochs_stream_ is not None:
             try:
                 self.epochs_stream_.disconnect()
             except Exception:
                 pass
-        if self._stream is not None:
-            try:
-                self._stream.disconnect()
-            except Exception:
-                pass
+        for stream in (self.event_stream_, self._stream):
+            if stream is not None:
+                try:
+                    stream.disconnect()
+                except Exception:
+                    pass
         if self._player is not None:
             try:
                 self._player.stop()
@@ -396,7 +587,7 @@ class RTEpochs:
             info=self.epochs_stream_.info,
             events=events,
             event_id=self.event_id,
-            tmin=self.tmin,
+            tmin=float(self.epochs_stream_.times[0]),
             verbose=False,
         )
 

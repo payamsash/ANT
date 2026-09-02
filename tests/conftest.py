@@ -10,6 +10,14 @@ _src = Path(__file__).parent.parent / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
+# test_rt_epochs_erp.py is a standalone script rather than a set of test cases
+# -- everything in it runs at import.  Collecting it therefore downloads the
+# MNE sample dataset and runs a live 60 s LSL replay on every session, and
+# contributes no tests in return; its own assertions would surface as
+# collection *errors*, not failures.  It stays runnable by hand, as its
+# docstring describes.  The wiring it covers is tested in test_rt_epochs.py.
+collect_ignore = ["test_rt_epochs_erp.py"]
+
 
 @pytest.fixture(scope="module")
 def meg_info():
