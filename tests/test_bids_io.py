@@ -172,3 +172,57 @@ def test_empty_nf_data_skips_tsv(tmp_path, minimal_raw):
     save_as_bids(minimal_raw, {}, tmp_path, subject="13", session="nf")
     tsv_files = list(tmp_path.rglob("*_beh.tsv"))
     assert len(tsv_files) == 0
+
+
+# ------------------------------------------------------------------
+# Shared NF behavioural TSV writer
+# ------------------------------------------------------------------
+
+
+def test_write_nf_beh_tsv_without_windows_is_modality_only(tmp_path):
+    """Back-compat guard: the pre-existing call shape must be unchanged."""
+    from mne_rt.tools.bids_io import write_nf_beh_tsv
+
+    path = write_nf_beh_tsv(
+        tmp_path / "x_beh.tsv", nf_data={"sensor_power": [1.0, 2.0], "hjorth": [3.0, 4.0]}
+    )
+    lines = path.read_text().splitlines()
+    assert lines[0].split("\t") == ["sensor_power", "hjorth"]
+    assert lines[1].split("\t") == ["1", "3"]
+
+
+def test_write_nf_beh_tsv_orders_and_pads(tmp_path):
+    from mne_rt.tools.bids_io import write_nf_beh_tsv
+
+    path = write_nf_beh_tsv(
+        tmp_path / "y_beh.tsv",
+        nf_data={"sensor_power": [1.0, 2.0, 3.0]},
+        windows={"onset": [0.0, 0.5, 1.0], "duration": [1.0, 1.0, 1.0]},
+        reward={"sensor_power": [0.0, 0.5], "hjorth": []},  # ragged + empty
+        snr=[10.0, 11.0, 12.0],
+    )
+    lines = path.read_text().splitlines()
+    assert lines[0].split("\t") == [
+        "onset",
+        "duration",
+        "sensor_power",
+        "reward_sensor_power",
+        "snr_db",
+    ]
+    assert lines[3].split("\t")[3] == "n/a"  # ragged reward padded
+    assert lines[1].split("\t")[0] == "0.000000"  # fixed-point onset
+
+
+def test_write_nf_beh_tsv_sidecar(tmp_path):
+    from mne_rt.tools.bids_io import write_nf_beh_tsv
+
+    path = write_nf_beh_tsv(
+        tmp_path / "z_beh.tsv",
+        nf_data={"sensor_power": [1.0]},
+        windows={"onset": [0.0], "duration": [1.0]},
+        sidecar=True,
+        meta={"sfreq_hz": 256.0},
+    )
+    side = json.loads(path.with_suffix(".json").read_text())
+    assert side["onset"]["Units"] == "s"
+    assert side["sfreq_hz"] == 256.0
