@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import time
 
 import numpy as np
 import pytest
@@ -1434,3 +1435,159 @@ def test_display_scales_follow_the_zscored_units(tmp_path, array_info):
         monkey.undo()
         nf.save()
     assert captured["scales"]["sensor_power"] == 1.0
+
+
+# ------------------------------------------------------------------
+# Per-window timestamps
+# ------------------------------------------------------------------
+
+
+def test_array_stream_timestamps_use_the_lsl_clock(array_info):
+    """The test double must share a time base with a real LSL stream.
+
+    `time.time()` and `local_clock()` are ~1.8e9 s apart, so an onset derived
+    under this double would otherwise land on a different clock entirely.
+    """
+    from mne_lsl.lsl import local_clock
+
+    from mne_rt.rt_stream import ArrayStream
+
+    stream = ArrayStream(_make_array_data(array_info, duration=2.0), array_info, n_repeat=np.inf)
+    stream.connect()
+    try:
+        _wait_for = time.time() + 2.0
+        while stream.n_new_samples < 10 and time.time() < _wait_for:
+            time.sleep(0.01)
+        ts = stream.get_data()[1]
+        assert ts.size
+        assert abs(float(ts[-1]) - local_clock()) < 1.0
+    finally:
+        stream.disconnect()
+
+
+def _timed_session(tmp_path, array_info, **kwargs):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=30.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=4.0,
+            winsize=1.0,
+            modality="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+            **kwargs,
+        )
+    finally:
+        nf.save(bids_tsv=True)
+    return nf
+
+
+def test_window_onsets_are_recorded_per_window(tmp_path, array_info):
+    nf = _timed_session(tmp_path, array_info)
+    onsets = nf.window_onsets
+    assert len(onsets) == len(nf.nf_data["sensor_power"]) > 2
+    assert all(b > a for a, b in zip(onsets, onsets[1:]))  # strictly increasing
+    assert all(d == pytest.approx(1.0, rel=1e-3) for d in nf.window_durations)
+    # A band, not equality: the hop is a busy-wait that re-reads the clock after
+    # the previous window's compute, which is exactly the drift being recorded.
+    for a, b in zip(onsets, onsets[1:]):
+        assert 0.4 <= (b - a) <= 0.9
+
+
+def test_window_timing_round_trips_through_save(tmp_path, array_info):
+    nf = _timed_session(tmp_path, array_info)
+    beh = next(pathlib.Path(nf.subject_dir).rglob("*_beh.json"))
+    payload = json.loads(beh.read_text())
+
+    w = payload["windows"]
+    n = len(nf.nf_data["sensor_power"])
+    assert len(w["onset"]) == len(w["duration"]) == len(w["onset_lsl"]) == n
+    assert w["onset"][0] == 0.0  # session-relative
+    assert w["onset_lsl"][0] == pytest.approx(payload["meta"]["t0_lsl"])
+    assert payload["meta"]["clock"] == "lsl_stream_clock"
+
+    # The data block must stay modality-only: meta["modalities"], the TSV
+    # columns and TransferProtocol all derive from its keys.
+    assert set(payload["data"]) == {"sensor_power"}
+    assert payload["meta"]["modalities"] == ["sensor_power"]
+
+
+def test_beh_tsv_leads_with_onset_and_duration(tmp_path, array_info):
+    nf = _timed_session(tmp_path, array_info)
+    tsv = next(pathlib.Path(nf.subject_dir).rglob("*_beh.tsv"))
+    lines = tsv.read_text().splitlines()
+    header = lines[0].split("\t")
+    assert header[:2] == ["onset", "duration"]  # BIDS ordering
+    assert len(lines) - 1 == len(nf.nf_data["sensor_power"])
+    # Sub-millisecond resolution: %.6g would round a ~1e3 s onset to 10 ms.
+    assert len(lines[2].split("\t")[0].split(".")[1]) >= 3
+
+
+def test_session_json_describes_its_columns(tmp_path, array_info):
+    """BIDS wants a sidecar; its filename is taken by the session payload."""
+    nf = _timed_session(tmp_path, array_info)
+    payload = json.loads(next(pathlib.Path(nf.subject_dir).rglob("*_beh.json")).read_text())
+    cols = payload["columns"]
+    assert cols["onset"]["Units"] == "s"
+    assert cols["duration"]["Units"] == "s"
+    assert "sensor_power" in cols
+
+
+def test_record_main_writes_the_tsv_by_default(tmp_path, array_info):
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    nf.record_main(
+        duration=2.0,
+        winsize=1.0,
+        modality="sensor_power",
+        show_raw_signal=False,
+        show_nf_signal=False,
+    )
+    assert list(pathlib.Path(nf.subject_dir).rglob("*_beh.tsv"))
+
+
+def test_non_integral_winsize_still_produces_windows(tmp_path, array_info):
+    """`winsize * sfreq` need not be a whole number.
+
+    The window was sized with int() but fetched with ceil(), so the two
+    disagreed by one sample and the length check discarded every window —
+    a silently empty session.
+    """
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    try:
+        nf.record_main(
+            duration=3.0,
+            winsize=1.501,  # 1.501 * 256 = 384.256
+            modality="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    finally:
+        nf.save()
+    assert len(nf.nf_data["sensor_power"]) > 0
+    assert nf.n_short_windows == 0
+
+
+def test_short_window_count_is_saved_even_with_no_windows(tmp_path, array_info):
+    """The diagnostic must survive the case it exists for: an empty session."""
+    nf = _make_rt_stream(tmp_path, montage="easycap-M1")
+    data = _make_array_data(array_info, duration=20.0)
+    nf.connect_to_array(data, array_info, n_repeat=np.inf)
+    # winsize beyond the buffer: get_data can never return a whole window.
+    try:
+        nf.record_main(
+            duration=2.0,
+            winsize=float(nf.bufsize) + 5.0,
+            modality="sensor_power",
+            show_raw_signal=False,
+            show_nf_signal=False,
+        )
+    finally:
+        nf.save()
+    assert nf.nf_data["sensor_power"] == []
+    payload = json.loads(next(pathlib.Path(nf.subject_dir).rglob("*_beh.json")).read_text())
+    assert payload["meta"]["n_short_windows"] > 0

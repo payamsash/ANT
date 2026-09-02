@@ -70,6 +70,7 @@ from mne_rt.tools import (
     remove_blinks_lms,
 )
 from mne_rt.tools.asr import ASRDenoiser
+from mne_rt.tools.bids_io import describe_nf_columns, write_nf_beh_tsv
 from mne_rt.tools.gedai import GEDAIDenoiser
 from mne_rt.tools.maxwell import RTMaxwellFilter
 from mne_rt.tools.orica import ORICA
@@ -263,7 +264,12 @@ class ArrayStream:
         k = chunk.shape[1]
         if k == 0:
             return
-        now = time.time()
+        # `local_clock`, not `time.time`: a real LSL stream timestamps its samples
+        # on this clock, and window onsets are derived from those timestamps. The
+        # two are ~1.8e9 seconds apart (seconds-since-boot against the Unix
+        # epoch), so mixing them would put every onset computed under this test
+        # double on a different time base from the live one.
+        now = local_clock()
         with self._lock:
             n_buf = self._buffer.shape[1]
             if k >= n_buf:
@@ -990,6 +996,7 @@ class RTStream(ModalityMixin):
         combiner: Optional[Any] = None,
         combined_name: str = "combined",
         save_raw: bool = False,
+        save_tsv: bool = True,
         ref_channel: str = "Fp1",
         signal_smoothing: float = 0.25,
         display_smoothing: float = 0.3,
@@ -1173,6 +1180,11 @@ class RTStream(ModalityMixin):
             session to ``raw/<stem>-raw.fif``.  Off by default because FIF
             files can be large; enable when the raw continuous signal is
             needed for offline re-analysis or provenance.
+        save_tsv : bool, default True
+            Also write the per-window values as a BIDS ``_beh.tsv`` table with a
+            ``_beh.json`` sidecar, alongside the session JSON.  The table carries
+            an ``onset`` and ``duration`` column per window, so the trace can be
+            aligned against a stimulus log without assuming a regular grid.
         signal_smoothing : float, default 0.25
             Exponential moving average (EMA) factor applied to each NF feature
             value before it is stored and displayed.  Controls the trade-off
@@ -1270,7 +1282,11 @@ class RTStream(ModalityMixin):
         self.picks = picks
         self.modality_params = modality_params
         self.winsize = winsize
-        self.window_size_s = int(winsize * self.rec_info["sfreq"])
+        # ceil, matching what `Stream.get_data(winsize)` actually returns. With
+        # int() the two disagreed by one sample whenever winsize*sfreq was not a
+        # whole number, and the length check below then discarded every window —
+        # a silently empty session.
+        self.window_size_s = int(np.ceil(winsize * self.rec_info["sfreq"]))
         self.estimate_delays = estimate_delays
         self._sfreq = self.rec_info["sfreq"]
         self.show_nf_signal = show_nf_signal
@@ -1612,6 +1628,16 @@ class RTStream(ModalityMixin):
 
         # ---- SNR tracking ----
         _snr_data: list[float] = []
+
+        # ---- Per-window timing ----
+        # The hop is a busy-wait that re-reads the clock *after* the previous
+        # window's feature computation, so realised onsets drift from the
+        # nominal index*hop grid — several seconds over a long run. Record the
+        # real onset instead of letting readers infer it.
+        _win_onsets: list[float] = []  # absolute, LSL clock
+        _win_durations: list[float] = []
+        _n_short: list[int] = [0]  # windows dropped for being the wrong length
+        _short_warned: list[bool] = [False]
         _snr_frange = (
             snr_frange
             if snr_frange is not None
@@ -1765,11 +1791,43 @@ class RTStream(ModalityMixin):
                     time.sleep(0.005)
 
                 tic = time.time()
-                data = self.stream.get_data(winsize, picks=picks)[0]
+                data, _ts = self.stream.get_data(winsize, picks=picks)
                 if estimate_delays:
                     _acq_delays.append(time.time() - tic)
                 if data.shape[1] != self.window_size_s:
+                    # Now that window_size_s uses ceil this should only happen
+                    # when the buffer cannot supply a whole window — winsize
+                    # larger than bufsize, or the very start of a session.
+                    _n_short[0] += 1
+                    if not _short_warned[0]:
+                        _short_warned[0] = True
+                        logger.warning(
+                            "Analysis window has %d samples, expected %d — dropping it. "
+                            "If this repeats, winsize (%.3f s) likely exceeds the stream "
+                            "buffer (%.3f s).",
+                            data.shape[1],
+                            self.window_size_s,
+                            winsize,
+                            float(getattr(self, "bufsize", 0) or 0),
+                        )
                     continue
+
+                # The timestamp buffer is preallocated with zeros, so `_ts[0]` can
+                # be a literal 0.0 rather than a clock value early in a session.
+                # Derive the onset from the tail, which the hop wait guarantees is
+                # real, and fall back to the wall clock if even that is unfilled.
+                _t_end = float(_ts[-1]) if _ts.size else 0.0
+                _win_dur = data.shape[1] / self._sfreq
+                if _t_end > 0.0:
+                    _onset = _t_end - (data.shape[1] - 1) / self._sfreq
+                else:
+                    # Still on the preallocated zeros. Substituting this host's
+                    # local_clock() would put one window on a different clock
+                    # from the rest whenever the sender's differs, quietly
+                    # shifting every session-relative onset. Unknown is honest.
+                    _onset = float("nan")
+                _win_onsets.append(_onset)
+                _win_durations.append(_win_dur)
 
                 _n_total_windows[0] += 1
                 if track_artifact_rate:
@@ -2031,6 +2089,11 @@ class RTStream(ModalityMixin):
 
         self.nf_data = nf_data
         self.reward_data = reward_data
+        self._zscore_normalize = zscore_normalize
+        # Absolute LSL-clock onsets; `save()` converts to session-relative.
+        self.window_onsets = _win_onsets
+        self.window_durations = _win_durations
+        self.n_short_windows = _n_short[0]
         if estimate_delays:
             self.acq_delays = _acq_delays
             self.artifact_delays = _art_delays
@@ -2048,6 +2111,10 @@ class RTStream(ModalityMixin):
             method_delay=True,
             raw_data=save_raw,
             format="json",
+            # The TSV and its sidecar are what an analysis pipeline reads; the
+            # JSON is the full record. Writing only the JSON meant the per-window
+            # table never reached disk in the default flow.
+            bids_tsv=save_tsv,
         )
         for kind, path in saved_files.items():
             logger.info("Saved %s → %s", kind, path)
@@ -3062,11 +3129,43 @@ class RTStream(ModalityMixin):
                     "n_windows": {m: len(v) for m, v in self.nf_data.items()},
                     "artifact_correction": str(self.artifact_correction),
                     "artifact_rate": getattr(self, "artifact_rate", None),
+                    "hop_s": float(getattr(self, "winsize", 0)) / 2.0,
+                    "zscore_normalize": bool(getattr(self, "_zscore_normalize", False)),
+                    # Unconditional: when every window is dropped this is the
+                    # only durable record of why the session came out empty.
+                    "n_short_windows": int(getattr(self, "n_short_windows", 0)),
                     "start_time": start_iso,
                     "end_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 },
                 "data": {m: [_ser(v) for v in vals] for m, vals in self.nf_data.items()},
             }
+            # Per-window timing, kept out of `data`: everything there is treated
+            # as a modality — by meta["modalities"], meta["n_windows"], the TSV
+            # columns and TransferProtocol alike.
+            # Truncated to the rows already snapshotted into `data` above: the
+            # acquisition thread is a daemon and keeps appending if the Qt window
+            # is closed early, which would otherwise leave onset rows with no
+            # feature values beside them.
+            _n_rows = max((len(v) for v in self.nf_data.values()), default=0)
+            _onsets = list(getattr(self, "window_onsets", []) or [])[:_n_rows]
+            _durations = list(getattr(self, "window_durations", []) or [])[:_n_rows]
+            _finite = [t for t in _onsets if np.isfinite(t)]
+            if _finite:
+                _t0 = _finite[0]
+                payload["meta"]["t0_lsl"] = _t0
+                # The acquisition stream's own LSL clock. With a remote sender and
+                # no clocksync this is the sender's, not this host's.
+                payload["meta"]["clock"] = "lsl_stream_clock"
+                payload["windows"] = {
+                    # Session-relative, so the first window is exactly 0.0.
+                    # `None` where the stream had not timestamped the window yet.
+                    "onset": [None if not np.isfinite(t) else _ser(t - _t0) for t in _onsets],
+                    "duration": [_ser(d) for d in _durations],
+                    # Absolute, for alignment against a stimulus log without
+                    # having to reapply the offset.
+                    "onset_lsl": [None if not np.isfinite(t) else _ser(t) for t in _onsets],
+                }
+
             snr = getattr(self, "snr_data", [])
             if snr:
                 payload["data"]["snr_db"] = [_ser(v) for v in snr]
@@ -3074,33 +3173,33 @@ class RTStream(ModalityMixin):
             for m, vals in reward.items():
                 if vals:
                     payload["data"][f"reward_{m}"] = [_ser(v) for v in vals]
+            payload["columns"] = describe_nf_columns(
+                nf_data=self.nf_data,
+                windows=payload.get("windows"),
+                reward=reward,
+                snr=snr,
+                meta=payload["meta"],
+            )
             p = self.subject_dir / "beh" / f"{stem}_task-neurofeedback_beh.json"
             with open(p, "w") as fh:
                 json.dump(payload, fh, indent=2)
             saved["nf_data"] = p
 
             if bids_tsv:
-                cols = list(self.nf_data.keys())
-                for m in reward:
-                    if reward[m]:
-                        cols.append(f"reward_{m}")
-                if snr:
-                    cols.append("snr_db")
-                n_rows = max(len(self.nf_data[m]) for m in self.nf_data) if self.nf_data else 0
                 tsv_p = self.subject_dir / "beh" / f"{stem}_task-neurofeedback_beh.tsv"
-                combined = {
-                    **self.nf_data,
-                    **{f"reward_{m}": v for m, v in reward.items() if v},
-                    **({"snr_db": snr} if snr else {}),
-                }
-                with open(tsv_p, "w") as fh:
-                    fh.write("\t".join(cols) + "\n")
-                    for i in range(n_rows):
-                        row = []
-                        for col in cols:
-                            vals_col = combined.get(col, [])
-                            row.append(str(_ser(vals_col[i])) if i < len(vals_col) else "n/a")
-                        fh.write("\t".join(row) + "\n")
+                # `sidecar=False`: BIDS would put the descriptions in
+                # `<stem>_beh.json`, which is the session payload's own filename.
+                # They go into that payload instead, under "columns", so the one
+                # file serves as both record and sidecar.
+                write_nf_beh_tsv(
+                    tsv_p,
+                    nf_data=self.nf_data,
+                    windows=payload.get("windows"),
+                    reward=reward,
+                    snr=snr,
+                    sidecar=False,
+                    meta=payload["meta"],
+                )
                 saved["nf_tsv"] = tsv_p
 
         # ── Timing / delay statistics ────────────────────────────────────

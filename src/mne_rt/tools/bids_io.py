@@ -253,6 +253,9 @@ def _write_nf_beh_tsv(
     task: str,
     run: Optional[str],
     overwrite: bool,
+    windows: Optional[dict] = None,
+    reward: Optional[dict] = None,
+    snr: Optional[list] = None,
 ) -> None:
     """Write per-window NF feature values to a _beh.tsv side-car file."""
     entity_dir = _build_entity_dir(output_dir=output_dir, subject=subject, session=session)
@@ -270,8 +273,101 @@ def _write_nf_beh_tsv(
         logger.info("nf_data is empty; skipping _beh.tsv")
         return
 
-    columns = list(nf_data.keys())
-    n_rows = max(len(v) for v in nf_data.values())
+    write_nf_beh_tsv(
+        tsv_path, nf_data=nf_data, windows=windows, reward=reward, snr=snr, sidecar=True
+    )
+    logger.info("NF behavioural data saved to %s", tsv_path)
+
+
+#: Columns that carry a time in seconds. These need fixed-point formatting: at a
+#: session-relative onset of ~1234 s, ``%.6g`` rounds to 10 ms, which is far too
+#: coarse to align a window against a stimulus log.
+_TIME_COLUMNS = ("onset", "duration")
+
+
+def _nf_columns(*, nf_data, windows=None, reward=None, snr=None):
+    """Assemble the ordered column names and their per-window series.
+
+    BIDS requires ``onset`` first and ``duration`` second, so the timing columns
+    lead; features, rewards and SNR follow.
+    """
+    columns: list[str] = []
+    combined: dict[str, list] = {}
+    for name in _TIME_COLUMNS:
+        if windows and windows.get(name):
+            columns.append(name)
+            combined[name] = list(windows[name])
+    for name, vals in nf_data.items():
+        columns.append(name)
+        combined[name] = list(vals)
+    for name, vals in (reward or {}).items():
+        if vals:
+            columns.append(f"reward_{name}")
+            combined[f"reward_{name}"] = list(vals)
+    if snr:
+        columns.append("snr_db")
+        combined["snr_db"] = list(snr)
+    return columns, combined
+
+
+def write_nf_beh_tsv(
+    tsv_path: Union[str, Path],
+    *,
+    nf_data: dict,
+    windows: Optional[dict] = None,
+    reward: Optional[dict] = None,
+    snr: Optional[list] = None,
+    sidecar: bool = False,
+    meta: Optional[dict] = None,
+) -> Path:
+    """Write per-window neurofeedback values as a BIDS ``_beh.tsv``.
+
+    The single writer for both :meth:`~mne_rt.RTStream.save` and
+    :func:`save_as_bids`, which previously carried separate implementations that
+    had already drifted apart on which columns they emit and how they format
+    floats.
+
+    Parameters
+    ----------
+    tsv_path : str | path-like
+        Destination ``.tsv`` file.
+    nf_data : dict
+        ``{modality: [value per window]}``. Ragged lists are padded with ``n/a``.
+    windows : dict | None
+        Optional per-window timing, ``{"onset": [...], "duration": [...]}``.
+        BIDS requires ``onset`` first and ``duration`` second, so these are
+        emitted ahead of every feature column.
+    reward : dict | None
+        ``{modality: [magnitude per window]}``, written as ``reward_<modality>``.
+        Empty series are skipped.
+    snr : list | None
+        Per-window SNR in dB, written as ``snr_db``.
+    sidecar : bool, default False
+        Also write the ``_beh.json`` sidecar describing the columns. BIDS wants
+        one whenever column names are not part of the standard vocabulary,
+        which for a neurofeedback file is all of them.
+    meta : dict | None
+        Session metadata for the sidecar (``sfreq_hz``, ``winsize_s`` …).
+
+    Returns
+    -------
+    path : Path
+        The file written.
+
+    Notes
+    -----
+    Feature values are written to six significant figures, matching what the
+    BIDS writer has always emitted. That is a readable table, not the archival
+    record: the session JSON keeps full float precision, so prefer it when
+    re-analysing. Time columns are fixed-point instead, because six significant
+    figures on an onset of ~1e3 s would quantise it to 10 ms.
+    """
+    tsv_path = Path(tsv_path)
+    tsv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    columns, combined = _nf_columns(nf_data=nf_data, windows=windows, reward=reward, snr=snr)
+
+    n_rows = max((len(v) for v in combined.values()), default=0)
 
     with open(tsv_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh, delimiter="\t")
@@ -279,12 +375,90 @@ def _write_nf_beh_tsv(
         for i in range(n_rows):
             row = []
             for col in columns:
-                vals = nf_data[col]
-                val = vals[i] if i < len(vals) else "n/a"
-                row.append(f"{val:.6g}" if isinstance(val, (int, float, np.floating)) else str(val))
+                vals = combined[col]
+                if i >= len(vals):
+                    row.append("n/a")
+                    continue
+                val = vals[i]
+                if isinstance(val, (int, float, np.floating, np.integer)):
+                    fmt = "%.6f" if col in _TIME_COLUMNS else "%.6g"
+                    row.append(fmt % float(val))
+                else:
+                    row.append(str(val))
             writer.writerow(row)
 
-    logger.info("NF behavioural data saved to %s", tsv_path)
+    if sidecar:
+        _write_beh_sidecar(tsv_path.with_suffix(".json"), columns=columns, meta=meta or {})
+    return tsv_path
+
+
+def describe_nf_columns(
+    *,
+    nf_data: dict,
+    windows: Optional[dict] = None,
+    reward: Optional[dict] = None,
+    snr: Optional[list] = None,
+    meta: Optional[dict] = None,
+) -> dict:
+    """Describe the ``_beh.tsv`` columns, in BIDS sidecar form.
+
+    Exposed separately because :meth:`~mne_rt.RTStream.save` cannot write a
+    standalone sidecar: BIDS would name it ``<stem>_beh.json``, which is already
+    the session payload's filename. That payload embeds this dict instead.
+    """
+    columns = _nf_columns(nf_data=nf_data, windows=windows, reward=reward, snr=snr)[0]
+    return _column_descriptions(columns, meta or {})
+
+
+def _write_beh_sidecar(path: Path, *, columns: list, meta: dict) -> None:
+    """Write the ``_beh.json`` sidecar describing each TSV column."""
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(_column_descriptions(columns, meta), fh, indent=2)
+
+
+def _column_descriptions(columns: list, meta: dict) -> dict:
+    """Describe each ``_beh.tsv`` column, as BIDS asks for non-standard names."""
+    descriptions: dict[str, dict] = {}
+    for col in columns:
+        if col == "onset":
+            descriptions[col] = {
+                "LongName": "Analysis window onset",
+                "Description": (
+                    "Onset of the analysis window, relative to the first window of "
+                    "the run. Absolute onsets on the LSL clock are in the session "
+                    "JSON, for alignment against a stimulus log."
+                ),
+                "Units": "s",
+            }
+        elif col == "duration":
+            descriptions[col] = {
+                "LongName": "Analysis window duration",
+                "Description": "Length of the analysis window.",
+                "Units": "s",
+            }
+        elif col == "snr_db":
+            descriptions[col] = {
+                "LongName": "Signal-to-noise ratio",
+                "Description": "In-band power over out-of-band power for the window.",
+                "Units": "dB",
+            }
+        elif col.startswith("reward_"):
+            descriptions[col] = {
+                "LongName": f"Reward magnitude for {col[len('reward_') :]}",
+                "Description": ("Protocol magnitude when the reward criterion was met, else 0.0."),
+            }
+        else:
+            descriptions[col] = {
+                "LongName": f"Neurofeedback value for {col}",
+                "Description": (
+                    "Feature value for this analysis window, after any z-scoring and smoothing."
+                ),
+                "Units": "z-score" if meta.get("zscore_normalize") else "arbitrary",
+            }
+    for key in ("sfreq_hz", "winsize_s", "hop_s"):
+        if meta.get(key) is not None:
+            descriptions[key] = meta[key]
+    return descriptions
 
 
 def _write_dataset_description(output_dir: Path, overwrite: bool) -> None:

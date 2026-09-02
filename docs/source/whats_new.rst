@@ -10,6 +10,37 @@ Version 1.2.0
 
 *unreleased*
 
+New features
+^^^^^^^^^^^
+
+- **Every analysis window now carries its own onset.** Sessions previously saved
+  only a start time, leaving a window's time to be inferred as
+  ``index * winsize/2``. That inference is not sound. It drifts — measured at
+  ~0.4 s over a 600 s run for a light configuration, and worse as the
+  per-window computation approaches the hop — and any window dropped for being
+  the wrong length shifted every later index silently, with no record that it
+  had happened. Most importantly it cannot produce an absolute time at all,
+  which is what aligning against a stimulus log requires.
+  :meth:`~mne_rt.RTStream.record_main` now records the real onset and duration
+  per window, exposed as
+  :attr:`~mne_rt.RTStream.window_onsets` / ``window_durations`` and saved under
+  a ``"windows"`` block in the session JSON: ``onset`` relative to the first
+  window, ``duration``, and ``onset_lsl`` on the absolute LSL clock, which is
+  the one that aligns directly against a stimulus log.
+- ``record_main`` now writes the BIDS ``_beh.tsv`` table by default
+  (``save_tsv=True``). It previously wrote only the session JSON, so the
+  per-window table never reached disk unless ``save()`` was called by hand. The
+  table leads with ``onset`` and ``duration`` as BIDS requires, and the session
+  JSON gained a ``"columns"`` block describing every column — BIDS would put
+  that in a ``_beh.json`` sidecar, but that filename is already the session
+  payload's.
+- A window dropped for having the wrong number of samples is now counted
+  (``meta["n_short_windows"]``) and explained once in the log. This is a
+  deterministic failure rather than an occasional one: ``winsize * sfreq`` is
+  truncated when sizing the window but rounded up when fetching it, so a
+  non-integral product silently discards *every* window and produces an empty
+  session.
+
 Numeric output changes
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -58,6 +89,18 @@ has been removed — passing a floor now *opts back into* the old behaviour.
 Bug fixes
 ^^^^^^^^^
 
+- ``ArrayStream`` timestamped its samples with ``time.time()`` while the
+  acquisition loop runs on ``local_clock()`` — the Unix epoch against
+  seconds-since-boot, about 1.8e9 seconds apart. Any timing derived from the
+  offline/test stream was therefore on a different clock from the live one.
+- The two behavioural-TSV writers (:meth:`~mne_rt.RTStream.save` and
+  :func:`~mne_rt.tools.save_as_bids`) were independent implementations that had
+  already drifted apart on float formatting and on ragged-column padding. They
+  now share one function, so a column written by both is written identically,
+  and :func:`~mne_rt.tools.save_as_bids` gains the ``_beh.json`` sidecar it
+  never wrote. Which columns appear still depends on what each caller supplies:
+  ``save_as_bids`` passes feature values only, while a session written by
+  ``record_main`` also carries timing, reward and SNR columns.
 - **The adaptive z-score tracked the wrong statistic.** With ``zscore_alpha >
   0``, :meth:`~mne_rt.RTStream.record_main` exponentially averaged
   ``abs(value - mean)`` — the mean absolute deviation, ≈0.798σ for Gaussian
