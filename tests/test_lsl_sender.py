@@ -1,12 +1,25 @@
 """Tests for LSLSender — LSL output layer.
 
-All tests mock the LSL backend so no real LSL runtime is required.
+Most tests mock the LSL backend so no real LSL runtime is required.  That
+convenience is also how a real bug shipped: ``MagicMock`` accepts any argument,
+so nothing noticed that ``push`` was handing mne-lsl a Python list, which it
+rejects for numeric streams.  Two tests therefore attack the mock — one asserts
+the *type* of the pushed sample, and one drops the mock entirely and pushes
+through a real outlet, as ``test_osc.py`` does for OSC.
 """
 
+import importlib
 import threading
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
+
+mne_lsl_available = importlib.util.find_spec("mne_lsl") is not None
+requires_mne_lsl = pytest.mark.skipif(
+    not mne_lsl_available,
+    reason="mne-lsl not installed",
+)
 
 # ------------------------------------------------------------------
 # Helpers
@@ -285,3 +298,59 @@ def test_channel_names_given_up_front_avoid_any_rebuild():
     n_after_init = MockInfo.call_count
     sender.push(["sensor_power@alpha", "sensor_power@theta"], [0.1, 0.2])
     assert MockInfo.call_count == n_after_init  # outlet never rebuilt
+
+
+# ------------------------------------------------------------------
+# The backend's actual contract
+# ------------------------------------------------------------------
+
+
+def test_push_sends_an_ndarray_not_a_list():
+    """mne-lsl asserts a NumPy array for numeric streams; a list raises.
+
+    Every test here mocks the outlet, and ``MagicMock`` takes a list happily —
+    so pushing a list passed the suite while failing against every real backend,
+    and no session ever delivered LSL feedback.  Nothing asserted the type.
+    """
+    sender, _, MockOutlet = _make_sender(n_channels=2, channel_names=["a", "b"])
+    sender.push(["a", "b"], [1.0, 2.0])
+
+    arg = MockOutlet.return_value.push_sample.call_args[0][0]
+    assert isinstance(arg, np.ndarray)
+    # float32 is the outlet's own dtype, so mne-lsl does not have to copy.
+    assert arg.dtype == np.float32
+    assert arg.shape == (2,)
+
+
+def test_push_pads_the_array_without_disturbing_the_values():
+    """The zero padding survives the move from list to array."""
+    sender, _, MockOutlet = _make_sender(n_channels=4)
+    sender.push(["only"], [0.42])
+
+    arg = MockOutlet.return_value.push_sample.call_args[0][0]
+    assert isinstance(arg, np.ndarray)
+    assert arg.shape == (4,)
+    assert arg[0] == pytest.approx(0.42)
+    assert np.all(arg[1:] == 0.0)
+
+
+@requires_mne_lsl
+def test_push_reaches_a_real_lsl_outlet():
+    """The decisive one: every mocked test passed while this raised.
+
+    Creating an outlet and pushing needs no subscriber and no network peer, the
+    same reason ``test_osc.py`` can send UDP with nothing listening.
+    """
+    from mne_rt.lsl_output import LSLSender
+
+    sender = LSLSender(
+        stream_name="mne_rt_test_push",
+        n_channels=2,
+        channel_names=["alpha", "beta"],
+    )
+    try:
+        sender.push(["alpha", "beta"], [0.25, -0.5])
+        # The padded path: one value into a two-channel outlet.
+        sender.push_value("alpha", 1.5)
+    finally:
+        sender.close()

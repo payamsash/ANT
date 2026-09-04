@@ -37,6 +37,8 @@ from __future__ import annotations
 import threading
 from typing import Optional, Sequence
 
+import numpy as np
+
 from mne_rt._logging import logger
 
 
@@ -209,7 +211,8 @@ class LSLSender:
         Raises
         ------
         ValueError
-            If ``modalities`` and ``values`` have different lengths.
+            If ``modalities`` and ``values`` have different lengths, or if a
+            value is not a number.
         """
         if len(modalities) != len(values):
             raise ValueError(
@@ -222,8 +225,13 @@ class LSLSender:
             # Labels first: they are published in the StreamInfo, so the outlet
             # has to carry them before the sample goes out, not after.
             self._ensure_channels(n, modalities)
-            # Pad with zeros if outlet has more channels than active modalities
-            sample = list(values) + [0.0] * (self._n_channels - n)
+            # mne-lsl asserts a NumPy array for numeric streams -- a list raises,
+            # on every version this package supports -- and the outlet is
+            # float32, so the sample is built directly in that dtype rather than
+            # converted from a list. Entries past `n` stay zero: that is the
+            # existing padding for an outlet wider than the active modalities.
+            sample = np.zeros(self._n_channels, dtype=np.float32)
+            sample[:n] = values
             self._outlet.push_sample(sample)
 
     def push_value(self, modality: str, value: float) -> None:
