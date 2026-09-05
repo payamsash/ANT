@@ -144,6 +144,18 @@ has been removed — passing a floor now *opts back into* the old behaviour.
 Bug fixes
 ^^^^^^^^^
 
+- **Neurofeedback values were never sent over LSL.**
+  :class:`~mne_rt.LSLSender` passed a Python list to mne-lsl's
+  ``StreamOutlet.push_sample``, which asserts a NumPy array for numeric
+  streams — on every version this package supports, not only recent ones — so
+  every push raised. Because :meth:`~mne_rt.RTStream.record_main` reports only
+  the *first* delivery failure and then carries on, a session ran to
+  completion, saved its results and published nothing: a display subscribing to
+  the outlet stayed frozen behind a single warning line. The sample is now
+  built as a ``float32`` array of the outlet's width, which is also the
+  outlet's own dtype. The tests mocked the LSL backend, and a mock accepts a
+  list, so nothing caught it; they now assert the type of the pushed sample,
+  and one test pushes through a real outlet.
 - **Every :class:`~mne_rt.RTEpochs` epoch carried a trailing all-zero sample.**
   The epoch buffer was sized as ``round((tmax - tmin) * sfreq) + 1``, but
   mne-lsl produces ``ceil((tmax - tmin) * sfreq)`` samples with
